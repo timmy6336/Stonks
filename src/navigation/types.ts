@@ -3,8 +3,13 @@ export type WatchlistStackParamList = {
   StockDetail: { symbol: string };
 };
 
+export type PortfolioStackParamList = {
+  Portfolio: undefined;
+  Profiles: undefined;
+};
+
 export type RootTabParamList = {
   WatchlistTab: undefined;
-  Portfolio: undefined;
+  PortfolioTab: undefined;
   Settings: undefined;
 };

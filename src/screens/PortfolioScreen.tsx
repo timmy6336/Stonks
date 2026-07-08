@@ -1,26 +1,29 @@
 import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { getCashBalance, getPositions, getTrades, resetPaperAccount } from '../db/database';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { PortfolioStackParamList } from '../navigation/types';
+import { getActiveProfile, getPositions, getTrades, resetPaperAccount } from '../db/database';
 import { fetchQuote } from '../api/marketData';
-import type { Position, Trade } from '../types';
+import type { Position, Profile, Trade } from '../types';
 
 type PositionRow = Position & { currentPrice?: number };
+type Props = NativeStackScreenProps<PortfolioStackParamList, 'Portfolio'>;
 
-export function PortfolioScreen() {
-  const [cash, setCash] = useState(0);
+export function PortfolioScreen({ navigation }: Props) {
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [positions, setPositions] = useState<PositionRow[]>([]);
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [cashBalance, pos, tradeHistory] = await Promise.all([
-      getCashBalance(),
+    const [activeProfile, pos, tradeHistory] = await Promise.all([
+      getActiveProfile(),
       getPositions(),
       getTrades('PAPER'),
     ]);
-    setCash(cashBalance);
+    setProfile(activeProfile);
     setTrades(tradeHistory);
     setPositions(pos);
     setLoading(false);
@@ -43,21 +46,26 @@ export function PortfolioScreen() {
     }, [load])
   );
 
+  const cash = profile?.cashBalance ?? 0;
   const marketValue = positions.reduce((sum, p) => sum + (p.currentPrice ?? p.avgCost) * p.quantity, 0);
   const totalValue = cash + marketValue;
 
   const handleReset = () => {
-    Alert.alert('Reset paper account?', 'This clears all simulated positions and trade history and resets cash to $100,000.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Reset',
-        style: 'destructive',
-        onPress: async () => {
-          await resetPaperAccount();
-          await load();
+    Alert.alert(
+      'Reset this save?',
+      `This clears all simulated positions and trade history and resets cash to $${(profile?.startingCash ?? 0).toFixed(2)}.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset',
+          style: 'destructive',
+          onPress: async () => {
+            await resetPaperAccount();
+            await load();
+          },
         },
-      },
-    ]);
+      ]
+    );
   };
 
   if (loading) {
@@ -76,6 +84,10 @@ export function PortfolioScreen() {
       keyExtractor={(p) => p.symbol}
       ListHeaderComponent={
         <>
+          <Pressable style={styles.saveRow} onPress={() => navigation.navigate('Profiles')}>
+            <Text style={styles.saveLabel}>Save: {profile?.name ?? ''}</Text>
+            <Text style={styles.saveManage}>Manage saves ›</Text>
+          </Pressable>
           <View style={styles.summaryCard}>
             <Text style={styles.summaryLabel}>Total paper portfolio value</Text>
             <Text style={styles.summaryValue}>${totalValue.toFixed(2)}</Text>
@@ -113,7 +125,7 @@ export function PortfolioScreen() {
             </View>
           ))}
           <Pressable style={styles.resetButton} onPress={handleReset}>
-            <Text style={styles.resetText}>Reset paper account</Text>
+            <Text style={styles.resetText}>Reset this save</Text>
           </Pressable>
         </>
       }
@@ -124,6 +136,9 @@ export function PortfolioScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  saveRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  saveLabel: { fontWeight: '700', fontSize: 15 },
+  saveManage: { color: '#0a7d32', fontWeight: '600' },
   summaryCard: { backgroundColor: '#f5f5f5', borderRadius: 12, padding: 16, marginBottom: 16 },
   summaryLabel: { color: '#666' },
   summaryValue: { fontSize: 28, fontWeight: '700', marginTop: 4 },

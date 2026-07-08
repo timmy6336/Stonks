@@ -31,6 +31,14 @@ export type WatchlistItem = {
   addedAt: number;
 };
 
+export type Profile = {
+  id: number;
+  name: string;
+  startingCash: number;
+  cashBalance: number;
+  createdAt: number;
+};
+
 export type Position = {
   symbol: string;
   quantity: number;
