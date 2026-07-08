@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { PortfolioStackParamList } from '../navigation/types';
@@ -85,15 +86,24 @@ export function PortfolioScreen({ navigation }: Props) {
       ListHeaderComponent={
         <>
           <Pressable style={styles.saveRow} onPress={() => navigation.navigate('Profiles')}>
-            <Text style={styles.saveLabel}>Save: {profile?.name ?? ''}</Text>
-            <Text style={styles.saveManage}>Manage saves ›</Text>
+            <View style={styles.saveLabelRow}>
+              <Ionicons name="albums" size={16} color="#333" />
+              <Text style={styles.saveLabel}>Save: {profile?.name ?? ''}</Text>
+            </View>
+            <View style={styles.saveLabelRow}>
+              <Text style={styles.saveManage}>Manage saves</Text>
+              <Ionicons name="chevron-forward" size={16} color="#0a7d32" />
+            </View>
           </Pressable>
           <View style={styles.summaryCard}>
             <Text style={styles.summaryLabel}>Total paper portfolio value</Text>
             <Text style={styles.summaryValue}>${totalValue.toFixed(2)}</Text>
             <Text style={styles.summarySub}>Cash: ${cash.toFixed(2)}   Invested: ${marketValue.toFixed(2)}</Text>
           </View>
-          <Text style={styles.sectionTitle}>Positions</Text>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="pie-chart" size={16} color="#0a7d32" />
+            <Text style={styles.sectionTitle}>Positions</Text>
+          </View>
         </>
       }
       renderItem={({ item }) => {
@@ -112,19 +122,35 @@ export function PortfolioScreen({ navigation }: Props) {
           </View>
         );
       }}
-      ListEmptyComponent={<Text style={styles.empty}>No open paper positions yet.</Text>}
+      ListEmptyComponent={
+        <View style={styles.empty}>
+          <Ionicons name="file-tray-outline" size={24} color="#bbb" />
+          <Text style={styles.emptyText}>No open paper positions yet.</Text>
+        </View>
+      }
       ListFooterComponent={
         <>
-          <Text style={styles.sectionTitle}>Recent trades</Text>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="receipt" size={16} color="#0a7d32" />
+            <Text style={styles.sectionTitle}>Recent trades</Text>
+          </View>
           {trades.slice(0, 20).map((t) => (
             <View key={t.id} style={styles.row}>
-              <Text>
-                {t.side} {t.quantity} {t.symbol} @ ${t.price.toFixed(2)}
-              </Text>
+              <View style={styles.tradeRow}>
+                <Ionicons
+                  name={t.side === 'BUY' ? 'arrow-up-circle' : 'arrow-down-circle'}
+                  size={16}
+                  color={t.side === 'BUY' ? '#0a7d32' : '#c0392b'}
+                />
+                <Text>
+                  {t.side} {t.quantity} {t.symbol} @ ${t.price.toFixed(2)}
+                </Text>
+              </View>
               <Text style={styles.sub}>{new Date(t.timestamp).toLocaleDateString()}</Text>
             </View>
           ))}
           <Pressable style={styles.resetButton} onPress={handleReset}>
+            <Ionicons name="refresh" size={16} color="#c0392b" />
             <Text style={styles.resetText}>Reset this save</Text>
           </Pressable>
         </>
@@ -137,13 +163,15 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   saveRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  saveLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   saveLabel: { fontWeight: '700', fontSize: 15 },
   saveManage: { color: '#0a7d32', fontWeight: '600' },
   summaryCard: { backgroundColor: '#f5f5f5', borderRadius: 12, padding: 16, marginBottom: 16 },
   summaryLabel: { color: '#666' },
   summaryValue: { fontSize: 28, fontWeight: '700', marginTop: 4 },
   summarySub: { marginTop: 6, color: '#666' },
-  sectionTitle: { fontSize: 16, fontWeight: '700', marginTop: 8, marginBottom: 8 },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8, marginBottom: 8 },
+  sectionTitle: { fontSize: 16, fontWeight: '700' },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -152,9 +180,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#ccc',
   },
+  tradeRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   symbol: { fontWeight: '700' },
   sub: { color: '#666', fontSize: 12, marginTop: 2 },
-  empty: { color: '#888', textAlign: 'center', marginVertical: 12 },
-  resetButton: { marginTop: 20, paddingVertical: 12, alignItems: 'center' },
+  empty: { alignItems: 'center', marginVertical: 12, gap: 6 },
+  emptyText: { color: '#888' },
+  resetButton: { flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: 20, paddingVertical: 12, alignItems: 'center' },
   resetText: { color: '#c0392b', fontWeight: '600' },
 });

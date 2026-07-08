@@ -1,5 +1,6 @@
 import React from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { SignalBadge } from './SignalBadge';
 import type { TickerRowData } from '../hooks/useTickerRows';
 
@@ -34,9 +35,11 @@ export function TickerRow({ row, onPress, onAddToWatchlist }: Props) {
             onAddToWatchlist(row.symbol);
           }}
         >
-          <Text style={styles.addButtonText}>+ Watch</Text>
+          <Ionicons name="bookmark-outline" size={14} color="#333" />
+          <Text style={styles.addButtonText}>Watch</Text>
         </Pressable>
       )}
+      <Ionicons name="chevron-forward" size={18} color="#bbb" />
     </Pressable>
   );
 }
@@ -54,6 +57,14 @@ const styles = StyleSheet.create({
   symbol: { fontSize: 16, fontWeight: '700' },
   change: { fontSize: 13, marginTop: 2 },
   error: { fontSize: 13, color: '#c0392b', marginTop: 2 },
-  addButton: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: '#eee' },
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#eee',
+  },
   addButtonText: { color: '#333', fontSize: 12, fontWeight: '600' },
 });

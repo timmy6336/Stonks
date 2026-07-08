@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import { Dimensions, ActivityIndicator, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { LineChart } from 'react-native-chart-kit';
 import type { StockDetailParams } from '../navigation/types';
@@ -15,6 +16,15 @@ import type { TradeSide } from '../types';
 type Props = {
   route: { params: StockDetailParams };
 };
+
+function CardTitle({ icon, children }: { icon: keyof typeof Ionicons.glyphMap; children: string }) {
+  return (
+    <View style={styles.cardTitleRow}>
+      <Ionicons name={icon} size={16} color="#0a7d32" />
+      <Text style={styles.cardTitle}>{children}</Text>
+    </View>
+  );
+}
 
 export function StockDetailScreen({ route }: Props) {
   const { symbol } = route.params;
@@ -149,7 +159,7 @@ export function StockDetailScreen({ route }: Props) {
 
       {signal && (
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Why this signal</Text>
+          <CardTitle icon="bulb">Why this signal</CardTitle>
           {signal.reasons.map((reason, i) => (
             <Text key={i} style={styles.reason}>
               • {reason}
@@ -160,14 +170,14 @@ export function StockDetailScreen({ route }: Props) {
 
       {signal && (
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Trend projection</Text>
+          <CardTitle icon="analytics">Trend projection</CardTitle>
           <Text style={styles.reason}>{describeTrendPrediction(prediction, signal)}</Text>
         </View>
       )}
 
       {profile && (
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>About the company</Text>
+          <CardTitle icon="business">About the company</CardTitle>
           {(profile.sector || profile.industry) && (
             <Text style={styles.profileMeta}>
               {[profile.sector, profile.industry].filter(Boolean).join(' · ')}
@@ -176,7 +186,8 @@ export function StockDetailScreen({ route }: Props) {
           )}
           {profile.summary && <Text style={styles.reason}>{profile.summary}</Text>}
           {profile.website && (
-            <Pressable onPress={() => Linking.openURL(profile.website!)}>
+            <Pressable style={styles.linkRow} onPress={() => Linking.openURL(profile.website!)}>
+              <Ionicons name="globe-outline" size={14} color="#0a7d32" />
               <Text style={styles.link}>{profile.website}</Text>
             </Pressable>
           )}
@@ -185,7 +196,7 @@ export function StockDetailScreen({ route }: Props) {
 
       {position && (
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Your position</Text>
+          <CardTitle icon="briefcase">Your position</CardTitle>
           <Text>{position.quantity} shares @ avg ${position.avgCost.toFixed(2)}</Text>
           <Text style={{ color: quote.price >= position.avgCost ? '#0a7d32' : '#c0392b' }}>
             Unrealized P&L: ${((quote.price - position.avgCost) * position.quantity).toFixed(2)}
@@ -193,13 +204,18 @@ export function StockDetailScreen({ route }: Props) {
         </View>
       )}
 
-      <Text style={styles.modeLabel}>Mode: {mode === 'LIVE' ? 'LIVE (real money)' : 'Paper (simulated)'}</Text>
+      <View style={styles.modeRow}>
+        <Ionicons name={mode === 'LIVE' ? 'flash' : 'flask-outline'} size={14} color="#666" />
+        <Text style={styles.modeLabel}>Mode: {mode === 'LIVE' ? 'LIVE (real money)' : 'Paper (simulated)'}</Text>
+      </View>
 
       <View style={styles.actionRow}>
         <Pressable style={[styles.actionButton, styles.buy]} onPress={() => openTrade('BUY')}>
+          <Ionicons name="arrow-up-circle" size={18} color="#fff" />
           <Text style={styles.actionText}>Buy</Text>
         </Pressable>
         <Pressable style={[styles.actionButton, styles.sell]} onPress={() => openTrade('SELL')}>
+          <Ionicons name="arrow-down-circle" size={18} color="#fff" />
           <Text style={styles.actionText}>Sell</Text>
         </Pressable>
       </View>
@@ -221,6 +237,7 @@ export function StockDetailScreen({ route }: Props) {
             {tradeError && <Text style={styles.error}>{tradeError}</Text>}
             <View style={styles.actionRow}>
               <Pressable style={styles.actionButton} onPress={() => setTradeSide(null)}>
+                <Ionicons name="close-circle-outline" size={18} color="#333" />
                 <Text>Cancel</Text>
               </Pressable>
               <Pressable
@@ -228,7 +245,14 @@ export function StockDetailScreen({ route }: Props) {
                 onPress={submitTrade}
                 disabled={submitting}
               >
-                {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.actionText}>Confirm</Text>}
+                {submitting ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <>
+                    <Ionicons name="checkmark-circle" size={18} color="#fff" />
+                    <Text style={styles.actionText}>Confirm</Text>
+                  </>
+                )}
               </Pressable>
             </View>
           </View>
@@ -245,14 +269,20 @@ const styles = StyleSheet.create({
   symbol: { fontSize: 22, fontWeight: '700' },
   price: { fontSize: 28, fontWeight: '600', marginTop: 4 },
   card: { backgroundColor: '#f5f5f5', borderRadius: 12, padding: 14, marginTop: 16 },
-  cardTitle: { fontWeight: '700', marginBottom: 8 },
+  cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
+  cardTitle: { fontWeight: '700' },
   reason: { marginBottom: 4, color: '#333', lineHeight: 20 },
   profileMeta: { color: '#666', marginBottom: 8, fontWeight: '600' },
-  link: { color: '#0a7d32', marginTop: 8 },
-  modeLabel: { marginTop: 16, color: '#666', fontStyle: 'italic' },
+  linkRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
+  link: { color: '#0a7d32' },
+  modeRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16 },
+  modeLabel: { color: '#666', fontStyle: 'italic' },
   actionRow: { flexDirection: 'row', gap: 12, marginTop: 12 },
   actionButton: {
     flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 6,
     paddingVertical: 12,
     borderRadius: 8,
     alignItems: 'center',

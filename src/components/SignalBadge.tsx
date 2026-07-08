@@ -1,5 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import type { SignalScore } from '../types';
 
 const COLORS: Record<SignalScore, string> = {
@@ -18,9 +19,18 @@ const LABELS: Record<SignalScore, string> = {
   STRONG_SELL: 'STRONG SELL',
 };
 
+const ICONS: Record<SignalScore, keyof typeof Ionicons.glyphMap> = {
+  STRONG_BUY: 'trending-up',
+  BUY: 'trending-up',
+  HOLD: 'remove',
+  SELL: 'trending-down',
+  STRONG_SELL: 'trending-down',
+};
+
 export function SignalBadge({ score }: { score: SignalScore }) {
   return (
     <View style={[styles.badge, { backgroundColor: COLORS[score] }]}>
+      <Ionicons name={ICONS[score]} size={12} color="#fff" />
       <Text style={styles.text}>{LABELS[score]}</Text>
     </View>
   );
@@ -28,6 +38,9 @@ export function SignalBadge({ score }: { score: SignalScore }) {
 
 const styles = StyleSheet.create({
   badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,

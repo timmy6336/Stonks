@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   clearAlpacaCredentials,
@@ -88,7 +89,10 @@ export function SettingsScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: 16 }}>
-      <Text style={styles.sectionTitle}>Alpaca API credentials</Text>
+      <View style={styles.sectionHeader}>
+        <Ionicons name="key" size={16} color="#0a7d32" />
+        <Text style={styles.sectionTitle}>Alpaca API credentials</Text>
+      </View>
       <Text style={styles.helpText}>
         Create a free Alpaca account at alpaca.markets to get API keys for paper or live trading. Your keys are stored only
         on this device.
@@ -109,15 +113,30 @@ export function SettingsScreen() {
         onChangeText={setSecretKey}
       />
       <Pressable style={styles.saveButton} onPress={handleSave} disabled={saving}>
-        <Text style={styles.saveButtonText}>{saving ? 'Saving…' : 'Save credentials'}</Text>
+        {saving ? (
+          <Text style={styles.saveButtonText}>Saving…</Text>
+        ) : (
+          <>
+            <Ionicons name="save" size={16} color="#fff" />
+            <Text style={styles.saveButtonText}>Save credentials</Text>
+          </>
+        )}
       </Pressable>
 
-      <Text style={styles.credentialStatus}>
-        {hasCredentials ? 'Alpaca credentials are saved on this device.' : 'No Alpaca credentials saved yet.'}
-      </Text>
+      <View style={styles.credentialStatusRow}>
+        <Ionicons
+          name={hasCredentials ? 'checkmark-circle' : 'alert-circle-outline'}
+          size={14}
+          color={hasCredentials ? '#0a7d32' : '#888'}
+        />
+        <Text style={styles.credentialStatus}>
+          {hasCredentials ? 'Alpaca credentials are saved on this device.' : 'No Alpaca credentials saved yet.'}
+        </Text>
+      </View>
 
       {hasCredentials && (
-        <Pressable onPress={handleClear}>
+        <Pressable style={styles.clearLinkRow} onPress={handleClear}>
+          <Ionicons name="trash-outline" size={14} color="#c0392b" />
           <Text style={styles.clearLink}>Remove saved credentials</Text>
         </Pressable>
       )}
@@ -126,7 +145,10 @@ export function SettingsScreen() {
 
       <View style={styles.liveRow}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.sectionTitle}>Live trading (real money)</Text>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="flash" size={16} color="#0a7d32" />
+            <Text style={styles.sectionTitle}>Live trading (real money)</Text>
+          </View>
           <Text style={styles.helpText}>
             When off, Buy/Sell everywhere in the app uses the built-in paper simulator — no account needed. When on, they
             place real orders through your Alpaca account.
@@ -135,21 +157,38 @@ export function SettingsScreen() {
         <Switch value={liveEnabled} onValueChange={handleToggleLive} />
       </View>
 
-      {statusMessage && <Text style={styles.status}>{statusMessage}</Text>}
+      {statusMessage && (
+        <View style={styles.statusRow}>
+          <Ionicons name="checkmark-circle" size={14} color="#0a7d32" />
+          <Text style={styles.status}>{statusMessage}</Text>
+        </View>
+      )}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  sectionTitle: { fontSize: 16, fontWeight: '700', marginBottom: 6 },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
+  sectionTitle: { fontSize: 16, fontWeight: '700' },
   helpText: { color: '#666', marginBottom: 12, lineHeight: 18 },
   input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 10, marginBottom: 10 },
-  saveButton: { backgroundColor: '#0a7d32', borderRadius: 8, paddingVertical: 12, alignItems: 'center' },
+  saveButton: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#0a7d32',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
   saveButtonText: { color: '#fff', fontWeight: '700' },
-  credentialStatus: { marginTop: 12, color: '#333' },
-  clearLink: { color: '#c0392b', marginTop: 8 },
+  credentialStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12 },
+  credentialStatus: { color: '#333' },
+  clearLinkRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
+  clearLink: { color: '#c0392b' },
   divider: { height: 1, backgroundColor: '#eee', marginVertical: 24 },
   liveRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  status: { marginTop: 16, color: '#0a7d32' },
+  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16 },
+  status: { color: '#0a7d32' },
 });

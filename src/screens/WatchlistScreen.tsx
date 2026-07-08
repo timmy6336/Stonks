@@ -8,6 +8,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { WatchlistStackParamList } from '../navigation/types';
@@ -104,7 +105,14 @@ export function WatchlistScreen({ navigation }: Props) {
           onSubmitEditing={handleAdd}
         />
         <Pressable style={styles.addButton} onPress={handleAdd} disabled={adding}>
-          {adding ? <ActivityIndicator color="#fff" /> : <Text style={styles.addButtonText}>Add</Text>}
+          {adding ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <>
+              <Ionicons name="add-circle" size={16} color="#fff" />
+              <Text style={styles.addButtonText}>Add</Text>
+            </>
+          )}
         </Pressable>
       </View>
 
@@ -121,7 +129,7 @@ export function WatchlistScreen({ navigation }: Props) {
               onPress={() => navigation.navigate('StockDetail', { symbol: item.symbol })}
               onLongPress={() => handleRemove(item.symbol)}
             >
-              <View>
+              <View style={{ flex: 1 }}>
                 <Text style={styles.symbol}>{item.symbol}</Text>
                 {item.error ? (
                   <Text style={styles.error}>{item.error}</Text>
@@ -135,9 +143,24 @@ export function WatchlistScreen({ navigation }: Props) {
                 )}
               </View>
               {item.signal && <SignalBadge score={item.signal.score} />}
+              <Pressable
+                hitSlop={8}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  handleRemove(item.symbol);
+                }}
+              >
+                <Ionicons name="trash-outline" size={18} color="#c0392b" />
+              </Pressable>
+              <Ionicons name="chevron-forward" size={18} color="#bbb" />
             </Pressable>
           )}
-          ListEmptyComponent={<Text style={styles.empty}>Add a ticker above to start tracking it.</Text>}
+          ListEmptyComponent={
+            <View style={styles.empty}>
+              <Ionicons name="telescope-outline" size={28} color="#bbb" />
+              <Text style={styles.emptyText}>Add a ticker above to start tracking it.</Text>
+            </View>
+          }
         />
       )}
     </View>
@@ -156,6 +179,9 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     backgroundColor: '#0a7d32',
     borderRadius: 8,
     paddingHorizontal: 16,
@@ -169,9 +195,11 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#ccc',
+    gap: 10,
   },
   symbol: { fontSize: 16, fontWeight: '700' },
   change: { fontSize: 13, marginTop: 2 },
   error: { fontSize: 13, color: '#c0392b', marginTop: 2 },
-  empty: { textAlign: 'center', marginTop: 40, color: '#888' },
+  empty: { alignItems: 'center', marginTop: 40, gap: 8 },
+  emptyText: { color: '#888' },
 });

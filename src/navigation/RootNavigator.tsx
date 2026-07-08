@@ -2,6 +2,7 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { Ionicons } from '@expo/vector-icons';
 import { WatchlistScreen } from '../screens/WatchlistScreen';
 import { TrendingScreen } from '../screens/TrendingScreen';
 import { StockDetailScreen } from '../screens/StockDetailScreen';
@@ -50,10 +51,24 @@ function PortfolioStackScreen() {
   );
 }
 
+const TAB_ICONS: Record<keyof RootTabParamList, keyof typeof Ionicons.glyphMap> = {
+  WatchlistTab: 'eye',
+  TrendingTab: 'trending-up',
+  PortfolioTab: 'wallet',
+  Settings: 'settings',
+};
+
 export function RootNavigator() {
   return (
     <NavigationContainer>
-      <Tab.Navigator screenOptions={{ headerShown: false }}>
+      <Tab.Navigator
+        screenOptions={({ route }) => ({
+          headerShown: false,
+          tabBarActiveTintColor: '#0a7d32',
+          tabBarInactiveTintColor: '#8a8a8a',
+          tabBarIcon: ({ color, size }) => <Ionicons name={TAB_ICONS[route.name]} color={color} size={size} />,
+        })}
+      >
         <Tab.Screen name="WatchlistTab" component={WatchlistStackScreen} options={{ title: 'Watchlist' }} />
         <Tab.Screen name="TrendingTab" component={TrendingStackScreen} options={{ title: 'Trending' }} />
         <Tab.Screen name="PortfolioTab" component={PortfolioStackScreen} options={{ title: 'Portfolio' }} />

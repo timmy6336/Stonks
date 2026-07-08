@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { TrendingStackParamList } from '../navigation/types';
@@ -54,7 +55,10 @@ export function TrendingScreen({ navigation }: Props) {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: 16 }}>
-      <Text style={styles.sectionTitle}>Trending now</Text>
+      <View style={styles.sectionHeader}>
+        <Ionicons name="flame" size={18} color="#0a7d32" />
+        <Text style={styles.sectionTitle}>Trending now</Text>
+      </View>
       {trendingError && <Text style={styles.error}>{trendingError}</Text>}
       {trendingLoading && trending.rows.length === 0 ? (
         <ActivityIndicator style={{ marginVertical: 12 }} />
@@ -64,7 +68,10 @@ export function TrendingScreen({ navigation }: Props) {
         ))
       )}
 
-      <Text style={styles.sectionTitle}>Browse by category</Text>
+      <View style={styles.sectionHeader}>
+        <Ionicons name="grid" size={18} color="#0a7d32" />
+        <Text style={styles.sectionTitle}>Browse by category</Text>
+      </View>
       <Text style={styles.categoryHint}>Curated groupings for browsing, not an official sector classification.</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
         {STOCK_CATEGORIES.map((c) => (
@@ -73,6 +80,7 @@ export function TrendingScreen({ navigation }: Props) {
             style={[styles.chip, c.id === selectedCategoryId && styles.chipSelected]}
             onPress={() => setSelectedCategoryId(c.id)}
           >
+            <Ionicons name={c.icon} size={14} color={c.id === selectedCategoryId ? '#fff' : '#333'} />
             <Text style={[styles.chipText, c.id === selectedCategoryId && styles.chipTextSelected]}>{c.name}</Text>
           </Pressable>
         ))}
@@ -89,10 +97,14 @@ export function TrendingScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  sectionTitle: { fontSize: 16, fontWeight: '700', marginTop: 16, marginBottom: 4 },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16, marginBottom: 4 },
+  sectionTitle: { fontSize: 16, fontWeight: '700' },
   categoryHint: { color: '#888', fontSize: 12, marginBottom: 10 },
   chipRow: { marginBottom: 4 },
   chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 16,

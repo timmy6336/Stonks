@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { PortfolioStackParamList } from '../navigation/types';
@@ -92,23 +93,42 @@ export function ProfilesScreen({ navigation }: Props) {
       contentContainerStyle={{ padding: 16 }}
       data={profiles}
       keyExtractor={(p) => String(p.id)}
-      ListHeaderComponent={<Text style={styles.sectionTitle}>Your saves</Text>}
+      ListHeaderComponent={
+        <View style={styles.sectionHeader}>
+          <Ionicons name="albums" size={16} color="#0a7d32" />
+          <Text style={styles.sectionTitle}>Your saves</Text>
+        </View>
+      }
       renderItem={({ item }) => (
         <Pressable style={styles.row} onPress={() => handleSwitch(item.id)} onLongPress={() => handleDelete(item)}>
-          <View>
-            <Text style={styles.name}>
-              {item.name} {item.id === activeId ? '(active)' : ''}
-            </Text>
+          <Ionicons
+            name={item.id === activeId ? 'checkmark-circle' : 'ellipse-outline'}
+            size={20}
+            color={item.id === activeId ? '#0a7d32' : '#ccc'}
+          />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.name}>{item.name}</Text>
             <Text style={styles.sub}>
               ${item.cashBalance.toFixed(2)} cash · started with ${item.startingCash.toFixed(2)}
             </Text>
           </View>
-          {item.id === activeId && <Text style={styles.activeBadge}>ACTIVE</Text>}
+          <Pressable
+            hitSlop={8}
+            onPress={(e) => {
+              e.stopPropagation();
+              handleDelete(item);
+            }}
+          >
+            <Ionicons name="trash-outline" size={18} color="#c0392b" />
+          </Pressable>
         </Pressable>
       )}
       ListFooterComponent={
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Start a new save</Text>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="add-circle" size={16} color="#0a7d32" />
+            <Text style={styles.sectionTitle}>Start a new save</Text>
+          </View>
           <TextInput style={styles.input} placeholder="Save name (e.g. Aggressive growth)" value={newName} onChangeText={setNewName} />
           <TextInput
             style={styles.input}
@@ -119,9 +139,16 @@ export function ProfilesScreen({ navigation }: Props) {
           />
           {formError && <Text style={styles.error}>{formError}</Text>}
           <Pressable style={styles.createButton} onPress={handleCreate} disabled={creating}>
-            {creating ? <ActivityIndicator color="#fff" /> : <Text style={styles.createButtonText}>Create save</Text>}
+            {creating ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="checkmark-circle-outline" size={16} color="#fff" />
+                <Text style={styles.createButtonText}>Create save</Text>
+              </>
+            )}
           </Pressable>
-          <Text style={styles.hint}>Tap a save to switch to it. Long-press to delete it.</Text>
+          <Text style={styles.hint}>Tap a save to switch to it. Tap the trash icon (or long-press) to delete it.</Text>
         </View>
       }
     />
@@ -131,21 +158,29 @@ export function ProfilesScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  sectionTitle: { fontSize: 16, fontWeight: '700', marginBottom: 8 },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
+  sectionTitle: { fontSize: 16, fontWeight: '700' },
   row: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 10,
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#ccc',
   },
   name: { fontWeight: '700', fontSize: 15 },
   sub: { color: '#666', fontSize: 12, marginTop: 2 },
-  activeBadge: { color: '#0a7d32', fontWeight: '700', fontSize: 12 },
   card: { backgroundColor: '#f5f5f5', borderRadius: 12, padding: 16, marginTop: 20 },
   input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 10, marginBottom: 10, backgroundColor: '#fff' },
-  createButton: { backgroundColor: '#0a7d32', borderRadius: 8, paddingVertical: 12, alignItems: 'center' },
+  createButton: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#0a7d32',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
   createButtonText: { color: '#fff', fontWeight: '700' },
   error: { color: '#c0392b', marginBottom: 8 },
   hint: { color: '#888', fontSize: 12, marginTop: 10, textAlign: 'center' },
