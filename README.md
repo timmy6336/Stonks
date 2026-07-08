@@ -6,10 +6,12 @@ real through your own Alpaca brokerage account.
 
 ## Getting the APK
 
-Every push builds a debug APK via GitHub Actions. To install it on a phone:
+Every push builds a standalone release APK via GitHub Actions — the JavaScript bundle is
+compiled into the app itself, so it never needs Metro or a dev server running to work.
+To install it on a phone:
 
 1. Open the **Actions** tab on this repo and pick the latest successful "Build Android APK" run.
-2. Download the `stonks-debug-apk` artifact and unzip it to get `app-debug.apk`.
+2. Download the `stonks-apk` artifact and unzip it to get `app-release.apk`.
 3. Copy it to your Android phone and open it (you'll need to allow "install unknown apps" for
    whichever app you use to open the file).
 
@@ -39,7 +41,7 @@ To build the native Android project locally (requires the Android SDK):
 
 ```bash
 npx expo prebuild -p android
-cd android && ./gradlew assembleDebug
+cd android && ./gradlew assembleRelease
 ```
 
 ## Roadmap ideas
