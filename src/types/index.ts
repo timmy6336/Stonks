@@ -31,6 +31,15 @@ export type WatchlistItem = {
   addedAt: number;
 };
 
+export type CompanyProfile = {
+  symbol: string;
+  sector: string | null;
+  industry: string | null;
+  summary: string | null;
+  website: string | null;
+  employees: number | null;
+};
+
 export type Profile = {
   id: number;
   name: string;

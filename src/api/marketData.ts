@@ -1,6 +1,8 @@
-import type { Candle, Quote } from '../types';
+import type { Candle, CompanyProfile, Quote } from '../types';
 
 const CHART_BASE = 'https://query1.finance.yahoo.com/v8/finance/chart';
+const TRENDING_BASE = 'https://query1.finance.yahoo.com/v1/finance/trending';
+const QUOTE_SUMMARY_BASE = 'https://query2.finance.yahoo.com/v10/finance/quoteSummary';
 
 type ChartResult = {
   meta: {
@@ -76,5 +78,60 @@ export async function fetchQuote(symbol: string): Promise<Quote> {
     change,
     changePercent: previousClose !== 0 ? (change / previousClose) * 100 : 0,
     marketTime: meta.regularMarketTime,
+  };
+}
+
+type TrendingResponse = {
+  finance: {
+    result: Array<{ quotes: Array<{ symbol: string }> }> | null;
+    error: { code: string; description: string } | null;
+  };
+};
+
+/** Currently trending tickers (region defaults to US). Falls back to an empty list on failure. */
+export async function fetchTrendingSymbols(region = 'US', count = 15): Promise<string[]> {
+  const res = await fetch(`${TRENDING_BASE}/${region}?count=${count}`);
+  if (!res.ok) {
+    throw new Error(`Trending stocks request failed: HTTP ${res.status}`);
+  }
+  const json: TrendingResponse = await res.json();
+  const result = json.finance.result?.[0];
+  if (json.finance.error || !result) {
+    throw new Error('No trending stocks data available right now.');
+  }
+  return result.quotes.map((q) => q.symbol);
+}
+
+type QuoteSummaryResponse = {
+  quoteSummary: {
+    result: Array<{
+      assetProfile?: {
+        sector?: string;
+        industry?: string;
+        longBusinessSummary?: string;
+        website?: string;
+        fullTimeEmployees?: number;
+      };
+    }> | null;
+    error: { code: string; description: string } | null;
+  };
+};
+
+export async function fetchCompanyProfile(symbol: string): Promise<CompanyProfile | null> {
+  const res = await fetch(`${QUOTE_SUMMARY_BASE}/${encodeURIComponent(symbol)}?modules=assetProfile`);
+  if (!res.ok) {
+    throw new Error(`Company profile request failed for ${symbol}: HTTP ${res.status}`);
+  }
+  const json: QuoteSummaryResponse = await res.json();
+  const profile = json.quoteSummary.result?.[0]?.assetProfile;
+  if (json.quoteSummary.error || !profile) return null;
+
+  return {
+    symbol: symbol.toUpperCase(),
+    sector: profile.sector ?? null,
+    industry: profile.industry ?? null,
+    summary: profile.longBusinessSummary ?? null,
+    website: profile.website ?? null,
+    employees: profile.fullTimeEmployees ?? null,
   };
 }

@@ -1,24 +1,28 @@
 import React, { useCallback, useState } from 'react';
-import { Dimensions, ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Dimensions, ActivityIndicator, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { LineChart } from 'react-native-chart-kit';
-import type { WatchlistStackParamList } from '../navigation/types';
-import { fetchHistory, fetchQuote } from '../api/marketData';
+import type { StockDetailParams } from '../navigation/types';
+import { fetchCompanyProfile, fetchHistory, fetchQuote } from '../api/marketData';
 import { computeSignal } from '../signals/signalEngine';
+import { computeTrendPrediction, describeTrendPrediction, type TrendPrediction } from '../predictions/trendPrediction';
 import { executeTrade, getActiveTradingMode } from '../trading/tradingService';
 import { getPosition } from '../db/database';
-import type { Candle, Position, Quote, Signal, TradingMode } from '../types';
+import type { Candle, CompanyProfile, Position, Quote, Signal, TradingMode } from '../types';
 import { SignalBadge } from '../components/SignalBadge';
 import type { TradeSide } from '../types';
 
-type Props = NativeStackScreenProps<WatchlistStackParamList, 'StockDetail'>;
+type Props = {
+  route: { params: StockDetailParams };
+};
 
 export function StockDetailScreen({ route }: Props) {
   const { symbol } = route.params;
   const [quote, setQuote] = useState<Quote | null>(null);
   const [candles, setCandles] = useState<Candle[]>([]);
   const [signal, setSignal] = useState<Signal | null>(null);
+  const [prediction, setPrediction] = useState<TrendPrediction | null>(null);
+  const [profile, setProfile] = useState<CompanyProfile | null>(null);
   const [position, setPosition] = useState<Position | null>(null);
   const [mode, setMode] = useState<TradingMode>('PAPER');
   const [loading, setLoading] = useState(true);
@@ -41,12 +45,19 @@ export function StockDetailScreen({ route }: Props) {
       setQuote(q);
       setCandles(history);
       setSignal(computeSignal(symbol, history));
+      setPrediction(computeTrendPrediction(history));
       setPosition(pos);
       setMode(activeMode);
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setLoading(false);
+    }
+
+    try {
+      setProfile(await fetchCompanyProfile(symbol));
+    } catch {
+      setProfile(null); // company profile is a nice-to-have; don't block the rest of the screen on it
     }
   }, [symbol]);
 
@@ -147,6 +158,31 @@ export function StockDetailScreen({ route }: Props) {
         </View>
       )}
 
+      {signal && (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Trend projection</Text>
+          <Text style={styles.reason}>{describeTrendPrediction(prediction, signal)}</Text>
+        </View>
+      )}
+
+      {profile && (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>About the company</Text>
+          {(profile.sector || profile.industry) && (
+            <Text style={styles.profileMeta}>
+              {[profile.sector, profile.industry].filter(Boolean).join(' · ')}
+              {profile.employees ? ` · ${profile.employees.toLocaleString()} employees` : ''}
+            </Text>
+          )}
+          {profile.summary && <Text style={styles.reason}>{profile.summary}</Text>}
+          {profile.website && (
+            <Pressable onPress={() => Linking.openURL(profile.website!)}>
+              <Text style={styles.link}>{profile.website}</Text>
+            </Pressable>
+          )}
+        </View>
+      )}
+
       {position && (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Your position</Text>
@@ -210,7 +246,9 @@ const styles = StyleSheet.create({
   price: { fontSize: 28, fontWeight: '600', marginTop: 4 },
   card: { backgroundColor: '#f5f5f5', borderRadius: 12, padding: 14, marginTop: 16 },
   cardTitle: { fontWeight: '700', marginBottom: 8 },
-  reason: { marginBottom: 4, color: '#333' },
+  reason: { marginBottom: 4, color: '#333', lineHeight: 20 },
+  profileMeta: { color: '#666', marginBottom: 8, fontWeight: '600' },
+  link: { color: '#0a7d32', marginTop: 8 },
   modeLabel: { marginTop: 16, color: '#666', fontStyle: 'italic' },
   actionRow: { flexDirection: 'row', gap: 12, marginTop: 12 },
   actionButton: {

@@ -1,0 +1,107 @@
+import React, { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { TrendingStackParamList } from '../navigation/types';
+import { fetchTrendingSymbols } from '../api/marketData';
+import { addToWatchlist } from '../db/database';
+import { useTickerRows } from '../hooks/useTickerRows';
+import { TickerRow } from '../components/TickerRow';
+import { STOCK_CATEGORIES } from '../data/categories';
+
+type Props = NativeStackScreenProps<TrendingStackParamList, 'Trending'>;
+
+export function TrendingScreen({ navigation }: Props) {
+  const [trendingSymbols, setTrendingSymbols] = useState<string[]>([]);
+  const [trendingError, setTrendingError] = useState<string | null>(null);
+  const [trendingLoading, setTrendingLoading] = useState(true);
+  const [selectedCategoryId, setSelectedCategoryId] = useState(STOCK_CATEGORIES[0].id);
+  const [justAdded, setJustAdded] = useState<string | null>(null);
+
+  const loadTrending = useCallback(async () => {
+    setTrendingLoading(true);
+    setTrendingError(null);
+    try {
+      const symbols = await fetchTrendingSymbols();
+      setTrendingSymbols(symbols);
+    } catch (e) {
+      setTrendingError((e as Error).message);
+    } finally {
+      setTrendingLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadTrending();
+  }, [loadTrending]);
+
+  useFocusEffect(
+    useCallback(() => {
+      setJustAdded(null);
+    }, [])
+  );
+
+  const trending = useTickerRows(trendingSymbols);
+  const selectedCategory = STOCK_CATEGORIES.find((c) => c.id === selectedCategoryId) ?? STOCK_CATEGORIES[0];
+  const category = useTickerRows(selectedCategory.symbols);
+
+  const handleAddToWatchlist = async (symbol: string) => {
+    await addToWatchlist(symbol);
+    setJustAdded(symbol);
+  };
+
+  const goToDetail = (symbol: string) => navigation.navigate('StockDetail', { symbol });
+
+  return (
+    <ScrollView style={styles.container} contentContainerStyle={{ padding: 16 }}>
+      <Text style={styles.sectionTitle}>Trending now</Text>
+      {trendingError && <Text style={styles.error}>{trendingError}</Text>}
+      {trendingLoading && trending.rows.length === 0 ? (
+        <ActivityIndicator style={{ marginVertical: 12 }} />
+      ) : (
+        trending.rows.map((row) => (
+          <TickerRow key={row.symbol} row={row} onPress={goToDetail} onAddToWatchlist={handleAddToWatchlist} />
+        ))
+      )}
+
+      <Text style={styles.sectionTitle}>Browse by category</Text>
+      <Text style={styles.categoryHint}>Curated groupings for browsing, not an official sector classification.</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
+        {STOCK_CATEGORIES.map((c) => (
+          <Pressable
+            key={c.id}
+            style={[styles.chip, c.id === selectedCategoryId && styles.chipSelected]}
+            onPress={() => setSelectedCategoryId(c.id)}
+          >
+            <Text style={[styles.chipText, c.id === selectedCategoryId && styles.chipTextSelected]}>{c.name}</Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+
+      {category.rows.map((row) => (
+        <TickerRow key={row.symbol} row={row} onPress={goToDetail} onAddToWatchlist={handleAddToWatchlist} />
+      ))}
+
+      {justAdded && <Text style={styles.addedNote}>Added {justAdded} to your watchlist.</Text>}
+    </ScrollView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+  sectionTitle: { fontSize: 16, fontWeight: '700', marginTop: 16, marginBottom: 4 },
+  categoryHint: { color: '#888', fontSize: 12, marginBottom: 10 },
+  chipRow: { marginBottom: 4 },
+  chip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 16,
+    backgroundColor: '#eee',
+    marginRight: 8,
+  },
+  chipSelected: { backgroundColor: '#0a7d32' },
+  chipText: { color: '#333', fontWeight: '600', fontSize: 13 },
+  chipTextSelected: { color: '#fff' },
+  error: { color: '#c0392b', marginBottom: 8 },
+  addedNote: { color: '#0a7d32', textAlign: 'center', marginTop: 12 },
+});
