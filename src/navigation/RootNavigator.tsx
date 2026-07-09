@@ -17,6 +17,7 @@ import { SignalTrackRecordScreen } from '../screens/SignalTrackRecordScreen';
 import { OnboardingScreen } from '../screens/OnboardingScreen';
 import { getAppStateValue, setAppStateValue } from '../db/database';
 import { maybeSendDailyDigest } from '../notifications/dailyDigest';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useTheme } from '../theme/ThemeContext';
 import type {
   PortfolioStackParamList,
@@ -128,10 +129,34 @@ function MainTabs() {
         tabBarIcon: ({ color, size }) => <Ionicons name={TAB_ICONS[route.name]} color={color} size={size} />,
       })}
     >
-      <Tab.Screen name="WatchlistTab" component={WatchlistStackScreen} options={{ title: 'Watchlist' }} />
-      <Tab.Screen name="TrendingTab" component={TrendingStackScreen} options={{ title: 'Trending' }} />
-      <Tab.Screen name="PortfolioTab" component={PortfolioStackScreen} options={{ title: 'Portfolio' }} />
-      <Tab.Screen name="SettingsTab" component={SettingsStackScreen} options={{ title: 'Settings' }} />
+      <Tab.Screen name="WatchlistTab" options={{ title: 'Watchlist' }}>
+        {() => (
+          <ErrorBoundary>
+            <WatchlistStackScreen />
+          </ErrorBoundary>
+        )}
+      </Tab.Screen>
+      <Tab.Screen name="TrendingTab" options={{ title: 'Trending' }}>
+        {() => (
+          <ErrorBoundary>
+            <TrendingStackScreen />
+          </ErrorBoundary>
+        )}
+      </Tab.Screen>
+      <Tab.Screen name="PortfolioTab" options={{ title: 'Portfolio' }}>
+        {() => (
+          <ErrorBoundary>
+            <PortfolioStackScreen />
+          </ErrorBoundary>
+        )}
+      </Tab.Screen>
+      <Tab.Screen name="SettingsTab" options={{ title: 'Settings' }}>
+        {() => (
+          <ErrorBoundary>
+            <SettingsStackScreen />
+          </ErrorBoundary>
+        )}
+      </Tab.Screen>
     </Tab.Navigator>
   );
 }

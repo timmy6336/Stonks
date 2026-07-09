@@ -74,8 +74,11 @@ export async function fetchHistory(symbol: string, range = '6mo', interval = '1d
 export async function fetchQuote(symbol: string): Promise<Quote> {
   const result = await fetchChart(symbol, '5d', '1d');
   const { meta } = result;
-  const previousClose = meta.previousClose ?? meta.chartPreviousClose ?? meta.regularMarketPrice;
+  if (meta.regularMarketPrice == null) {
+    throw new Error(`No live quote available for "${symbol}" right now.`);
+  }
   const price = meta.regularMarketPrice;
+  const previousClose = meta.previousClose ?? meta.chartPreviousClose ?? price;
   const change = price - previousClose;
   return {
     symbol: symbol.toUpperCase(),
