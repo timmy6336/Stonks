@@ -1,5 +1,5 @@
 import * as SQLite from 'expo-sqlite';
-import type { Position, Profile, Trade, TradeMode, TradeSide, WatchlistItem } from '../types';
+import type { Alert, AlertType, Position, Profile, Trade, TradeMode, TradeSide, WatchlistItem } from '../types';
 
 export const DEFAULT_STARTING_CASH = 100_000;
 const ACTIVE_PROFILE_KEY = 'active_profile_id';
@@ -42,6 +42,14 @@ function getDb(): Promise<SQLite.SQLiteDatabase> {
         CREATE TABLE IF NOT EXISTS app_state (
           key TEXT PRIMARY KEY NOT NULL,
           value TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS alerts (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          symbol TEXT NOT NULL,
+          type TEXT NOT NULL,
+          threshold REAL,
+          created_at INTEGER NOT NULL,
+          triggered_at INTEGER
         );
       `);
 
@@ -348,4 +356,54 @@ export async function resetPaperAccount(profileId?: number): Promise<void> {
     await db.runAsync('DELETE FROM trades WHERE profile_id = ? AND mode = ?', id, 'PAPER');
     await db.runAsync('UPDATE profiles SET cash_balance = ? WHERE id = ?', profileRow?.starting_cash ?? DEFAULT_STARTING_CASH, id);
   });
+}
+
+// --- Price/signal alerts ---
+
+function mapAlertRow(r: any): Alert {
+  return {
+    id: r.id,
+    symbol: r.symbol,
+    type: r.type,
+    threshold: r.threshold,
+    createdAt: r.created_at,
+    triggeredAt: r.triggered_at,
+  };
+}
+
+export async function getAlerts(): Promise<Alert[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<any>('SELECT * FROM alerts ORDER BY created_at DESC');
+  return rows.map(mapAlertRow);
+}
+
+export async function getAlertsForSymbol(symbol: string): Promise<Alert[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<any>('SELECT * FROM alerts WHERE symbol = ? ORDER BY created_at DESC', symbol.toUpperCase());
+  return rows.map(mapAlertRow);
+}
+
+export async function createAlert(symbol: string, type: AlertType, threshold: number | null): Promise<Alert> {
+  const db = await getDb();
+  const createdAt = Date.now();
+  const result = await db.runAsync(
+    'INSERT INTO alerts (symbol, type, threshold, created_at, triggered_at) VALUES (?, ?, ?, ?, NULL)',
+    symbol.toUpperCase(), type, threshold, createdAt
+  );
+  return { id: result.lastInsertRowId, symbol: symbol.toUpperCase(), type, threshold, createdAt, triggeredAt: null };
+}
+
+export async function deleteAlert(id: number): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('DELETE FROM alerts WHERE id = ?', id);
+}
+
+export async function markAlertTriggered(id: number): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('UPDATE alerts SET triggered_at = ? WHERE id = ?', Date.now(), id);
+}
+
+export async function resetAlert(id: number): Promise<void> {
+  const db = await getDb();
+  await db.runAsync('UPDATE alerts SET triggered_at = NULL WHERE id = ?', id);
 }

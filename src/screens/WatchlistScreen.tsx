@@ -16,6 +16,7 @@ import type { WatchlistStackParamList } from '../navigation/types';
 import { addToWatchlist, getWatchlist, removeFromWatchlist } from '../db/database';
 import { fetchHistory, fetchQuote, searchSymbols, type SymbolSearchResult } from '../api/marketData';
 import { computeSignal } from '../signals/signalEngine';
+import { checkAlertsForSymbol } from '../notifications/alertEngine';
 import type { Quote, Signal } from '../types';
 import { SignalBadge } from '../components/SignalBadge';
 
@@ -58,6 +59,7 @@ export function WatchlistScreen({ navigation }: Props) {
             if (idx !== -1) next[idx] = { symbol: item.symbol, quote, signal };
             return next;
           });
+          checkAlertsForSymbol(item.symbol, quote, signal).catch(() => {}); // best-effort; never block the list on it
         } catch (e) {
           setRows((prev) => {
             const next = [...prev];

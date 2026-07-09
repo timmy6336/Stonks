@@ -21,9 +21,10 @@ import { computeSignal } from '../signals/signalEngine';
 import { computeTrendPrediction, describeTrendPrediction, type TrendPrediction } from '../predictions/trendPrediction';
 import { runSignalBacktest, type BacktestResult } from '../backtest/backtestEngine';
 import { generateInsight, hasGeminiApiKey } from '../llm/llmClient';
+import { checkAlertsForSymbol, requestNotificationPermission } from '../notifications/alertEngine';
 import { executeTrade, getActiveTradingMode } from '../trading/tradingService';
-import { getPosition } from '../db/database';
-import type { Candle, CompanyProfile, Position, Quote, Signal, TradingMode } from '../types';
+import { createAlert, getPosition } from '../db/database';
+import type { AlertType, Candle, CompanyProfile, Position, Quote, Signal, TradingMode } from '../types';
 import { SignalBadge } from '../components/SignalBadge';
 import type { TradeSide } from '../types';
 
@@ -62,6 +63,11 @@ export function StockDetailScreen({ route }: Props) {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [hasAiKey, setHasAiKey] = useState(false);
+  const [showAlertModal, setShowAlertModal] = useState(false);
+  const [alertType, setAlertType] = useState<AlertType>('PRICE_ABOVE');
+  const [alertThreshold, setAlertThreshold] = useState('');
+  const [alertError, setAlertError] = useState<string | null>(null);
+  const [alertSaved, setAlertSaved] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -75,13 +81,15 @@ export function StockDetailScreen({ route }: Props) {
         getPosition(symbol),
         getActiveTradingMode(),
       ]);
+      const sig = computeSignal(symbol, history);
       setQuote(q);
       setCandles(history);
-      setSignal(computeSignal(symbol, history));
+      setSignal(sig);
       setPrediction(computeTrendPrediction(history));
       setBacktest(runSignalBacktest(symbol, history));
       setPosition(pos);
       setMode(activeMode);
+      checkAlertsForSymbol(symbol, q, sig).catch(() => {}); // alerts are best-effort; never block the screen on them
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -134,6 +142,31 @@ export function StockDetailScreen({ route }: Props) {
       setAiError((e as Error).message);
     } finally {
       setAiLoading(false);
+    }
+  };
+
+  const openAlertModal = () => {
+    setAlertType('PRICE_ABOVE');
+    setAlertThreshold(quote ? quote.price.toFixed(2) : '');
+    setAlertError(null);
+    setAlertSaved(false);
+    setShowAlertModal(true);
+  };
+
+  const handleCreateAlert = async () => {
+    const needsThreshold = alertType === 'PRICE_ABOVE' || alertType === 'PRICE_BELOW';
+    const threshold = needsThreshold ? Number(alertThreshold) : null;
+    if (needsThreshold && (!Number.isFinite(threshold) || (threshold as number) <= 0)) {
+      setAlertError('Enter a valid price.');
+      return;
+    }
+    setAlertError(null);
+    try {
+      await requestNotificationPermission();
+      await createAlert(symbol, alertType, threshold);
+      setAlertSaved(true);
+    } catch (e) {
+      setAlertError((e as Error).message);
     }
   };
 
@@ -346,6 +379,61 @@ export function StockDetailScreen({ route }: Props) {
         </Pressable>
       </View>
 
+      <Pressable style={styles.alertButton} onPress={openAlertModal}>
+        <Ionicons name="notifications-outline" size={16} color="#0a7d32" />
+        <Text style={styles.alertButtonText}>Set alert</Text>
+      </Pressable>
+
+      <Modal visible={showAlertModal} transparent animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.cardTitle}>Set an alert for {symbol}</Text>
+            {(
+              [
+                ['PRICE_ABOVE', 'Price rises above'],
+                ['PRICE_BELOW', 'Price drops below'],
+                ['SIGNAL_BUY_OR_BETTER', 'Signal reaches BUY'],
+                ['SIGNAL_STRONG_BUY', 'Signal reaches STRONG BUY'],
+              ] as [AlertType, string][]
+            ).map(([type, label]) => (
+              <Pressable key={type} style={styles.alertTypeRow} onPress={() => setAlertType(type)}>
+                <Ionicons
+                  name={alertType === type ? 'radio-button-on' : 'radio-button-off'}
+                  size={18}
+                  color={alertType === type ? '#0a7d32' : '#999'}
+                />
+                <Text style={styles.alertTypeLabel}>{label}</Text>
+              </Pressable>
+            ))}
+            {(alertType === 'PRICE_ABOVE' || alertType === 'PRICE_BELOW') && (
+              <TextInput
+                style={styles.input}
+                keyboardType="numeric"
+                value={alertThreshold}
+                onChangeText={setAlertThreshold}
+                placeholder="Price"
+              />
+            )}
+            {alertError && <Text style={styles.error}>{alertError}</Text>}
+            {alertSaved ? (
+              <Text style={[styles.reason, { color: '#0a7d32' }]}>Alert saved. You can manage it from the bell icon on Watchlist.</Text>
+            ) : null}
+            <View style={styles.actionRow}>
+              <Pressable style={styles.actionButton} onPress={() => setShowAlertModal(false)}>
+                <Ionicons name="close-circle-outline" size={18} color="#333" />
+                <Text>{alertSaved ? 'Close' : 'Cancel'}</Text>
+              </Pressable>
+              {!alertSaved && (
+                <Pressable style={[styles.actionButton, styles.buy]} onPress={handleCreateAlert}>
+                  <Ionicons name="checkmark-circle" size={18} color="#fff" />
+                  <Text style={styles.actionText}>Save alert</Text>
+                </Pressable>
+              )}
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <Modal visible={tradeSide !== null} transparent animationType="fade">
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
@@ -430,6 +518,17 @@ const styles = StyleSheet.create({
   buy: { backgroundColor: '#0a7d32' },
   sell: { backgroundColor: '#c0392b' },
   actionText: { color: '#fff', fontWeight: '700' },
+  alertButton: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 6,
+    alignItems: 'center',
+    marginTop: 12,
+    paddingVertical: 10,
+  },
+  alertButtonText: { color: '#0a7d32', fontWeight: '600' },
+  alertTypeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 },
+  alertTypeLabel: { color: '#333' },
   error: { color: '#c0392b', marginBottom: 8 },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: 24 },
   modalCard: { backgroundColor: '#fff', borderRadius: 12, padding: 20 },

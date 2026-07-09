@@ -1,4 +1,5 @@
 import React from 'react';
+import { Pressable } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -6,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { WatchlistScreen } from '../screens/WatchlistScreen';
 import { TrendingScreen } from '../screens/TrendingScreen';
 import { StockDetailScreen } from '../screens/StockDetailScreen';
+import { AlertsScreen } from '../screens/AlertsScreen';
 import { PortfolioScreen } from '../screens/PortfolioScreen';
 import { ProfilesScreen } from '../screens/ProfilesScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
@@ -19,12 +21,24 @@ const PortfolioStack = createNativeStackNavigator<PortfolioStackParamList>();
 function WatchlistStackScreen() {
   return (
     <WatchlistStack.Navigator>
-      <WatchlistStack.Screen name="Watchlist" component={WatchlistScreen} options={{ title: 'Watchlist' }} />
+      <WatchlistStack.Screen
+        name="Watchlist"
+        component={WatchlistScreen}
+        options={({ navigation }) => ({
+          title: 'Watchlist',
+          headerRight: () => (
+            <Pressable onPress={() => navigation.navigate('Alerts')} hitSlop={8} style={{ marginRight: 4 }}>
+              <Ionicons name="notifications-outline" size={22} color="#0a7d32" />
+            </Pressable>
+          ),
+        })}
+      />
       <WatchlistStack.Screen
         name="StockDetail"
         component={StockDetailScreen}
         options={({ route }) => ({ title: route.params.symbol })}
       />
+      <WatchlistStack.Screen name="Alerts" component={AlertsScreen} options={{ title: 'Alerts' }} />
     </WatchlistStack.Navigator>
   );
 }

@@ -40,6 +40,17 @@ export type CompanyProfile = {
   employees: number | null;
 };
 
+export type AlertType = 'PRICE_ABOVE' | 'PRICE_BELOW' | 'SIGNAL_BUY_OR_BETTER' | 'SIGNAL_STRONG_BUY';
+
+export type Alert = {
+  id: number;
+  symbol: string;
+  type: AlertType;
+  threshold: number | null;
+  createdAt: number;
+  triggeredAt: number | null;
+};
+
 export type Profile = {
   id: number;
   name: string;
