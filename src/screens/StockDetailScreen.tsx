@@ -20,7 +20,7 @@ import { fetchCompanyProfile, fetchHistory, fetchNews, fetchQuote, type NewsItem
 import { computeSignal } from '../signals/signalEngine';
 import { computeTrendPrediction, describeTrendPrediction, type TrendPrediction } from '../predictions/trendPrediction';
 import { runSignalBacktest, type BacktestResult } from '../backtest/backtestEngine';
-import { generateInsight, hasAnyApiKey } from '../llm/llmClient';
+import { generateInsight, hasAnyProviderConfigured } from '../llm/llmClient';
 import { checkAlertsForSymbol, requestNotificationPermission } from '../notifications/alertEngine';
 import { executeTrade, getActiveTradingMode } from '../trading/tradingService';
 import { createAlert, getPosition, logSignalIfNew } from '../db/database';
@@ -129,7 +129,7 @@ export function StockDetailScreen({ route }: Props) {
       setNews([]); // news is a nice-to-have; don't block the rest of the screen on it
     }
 
-    setHasAiKey(await hasAnyApiKey());
+    setHasAiKey(await hasAnyProviderConfigured());
   }, [symbol]);
 
   useFocusEffect(
