@@ -291,7 +291,7 @@ function createStyles(colors: ThemeColors) {
       paddingVertical: 12,
       alignItems: 'center',
     },
-    saveButtonText: { color: '#fff', fontWeight: '700' },
+    saveButtonText: { color: '#fff', fontWeight: '700', includeFontPadding: false },
     credentialStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12 },
     credentialStatus: { color: colors.text },
     clearLinkRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },

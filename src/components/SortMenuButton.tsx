@@ -104,7 +104,7 @@ function createStyles(colors: ThemeColors) {
       paddingVertical: 7,
       marginBottom: 8,
     },
-    buttonText: { color: colors.text, fontSize: 13, fontWeight: '600', maxWidth: 160 },
+    buttonText: { color: colors.text, fontSize: 13, fontWeight: '600', maxWidth: 160, includeFontPadding: false },
     backdrop: { flex: 1, backgroundColor: colors.modalBackdrop, justifyContent: 'center', padding: 24 },
     menu: { backgroundColor: colors.card, borderRadius: 12, padding: 8 },
     menuItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, paddingHorizontal: 8 },

@@ -601,7 +601,7 @@ function createStyles(colors: ThemeColors) {
       backgroundColor: colors.chipBackground,
     },
     rangeChipSelected: { backgroundColor: colors.accent },
-    rangeChipText: { color: colors.text, fontWeight: '600', fontSize: 12 },
+    rangeChipText: { color: colors.text, fontWeight: '600', fontSize: 12, includeFontPadding: false },
     rangeChipTextSelected: { color: '#fff' },
     statsGrid: { flexDirection: 'row', flexWrap: 'wrap' },
     statItem: { width: '50%', marginBottom: 10 },
@@ -641,7 +641,7 @@ function createStyles(colors: ThemeColors) {
     },
     buy: { backgroundColor: colors.accent },
     sell: { backgroundColor: colors.danger },
-    actionText: { color: '#fff', fontWeight: '700' },
+    actionText: { color: '#fff', fontWeight: '700', includeFontPadding: false },
     alertButton: {
       flexDirection: 'row',
       justifyContent: 'center',

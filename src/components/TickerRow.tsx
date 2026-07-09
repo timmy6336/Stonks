@@ -81,7 +81,7 @@ function createStyles(colors: ThemeColors) {
       paddingHorizontal: 6,
       paddingVertical: 2,
     },
-    recoveryBadgeText: { color: '#fff', fontSize: 9, fontWeight: '700' },
+    recoveryBadgeText: { color: '#fff', fontSize: 9, fontWeight: '700', includeFontPadding: false },
     change: { fontSize: 13, marginTop: 2 },
     error: { fontSize: 13, color: colors.danger, marginTop: 2 },
     addButton: {
@@ -93,6 +93,6 @@ function createStyles(colors: ThemeColors) {
       borderRadius: 8,
       backgroundColor: colors.chipBackground,
     },
-    addButtonText: { color: colors.text, fontSize: 12, fontWeight: '600' },
+    addButtonText: { color: colors.text, fontSize: 12, fontWeight: '600', includeFontPadding: false },
   });
 }

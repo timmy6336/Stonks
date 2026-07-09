@@ -201,7 +201,7 @@ function createStyles(colors: ThemeColors) {
       paddingVertical: 12,
       alignItems: 'center',
     },
-    createButtonText: { color: '#fff', fontWeight: '700' },
+    createButtonText: { color: '#fff', fontWeight: '700', includeFontPadding: false },
     error: { color: colors.danger, marginBottom: 8 },
     hint: { color: colors.textMuted, fontSize: 12, marginTop: 10, textAlign: 'center' },
   });

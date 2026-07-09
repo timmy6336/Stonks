@@ -345,7 +345,7 @@ function createStyles(colors: ThemeColors) {
       paddingHorizontal: 16,
       justifyContent: 'center',
     },
-    addButtonText: { color: '#fff', fontWeight: '600' },
+    addButtonText: { color: '#fff', fontWeight: '600', includeFontPadding: false },
     searchResults: {
       backgroundColor: colors.card,
       borderRadius: 8,

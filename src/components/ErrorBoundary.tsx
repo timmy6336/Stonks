@@ -42,5 +42,5 @@ const styles = StyleSheet.create({
   title: { fontSize: 18, fontWeight: '700', color: '#fff' },
   message: { color: '#cbd5e1', textAlign: 'center' },
   button: { marginTop: 12, backgroundColor: '#0a7d32', borderRadius: 8, paddingHorizontal: 20, paddingVertical: 12 },
-  buttonText: { color: '#fff', fontWeight: '700' },
+  buttonText: { color: '#fff', fontWeight: '700', includeFontPadding: false },
 });

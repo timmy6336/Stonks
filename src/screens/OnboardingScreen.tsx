@@ -144,6 +144,6 @@ function createStyles(colors: ThemeColors) {
       paddingHorizontal: 22,
       paddingVertical: 12,
     },
-    nextButtonText: { color: '#fff', fontWeight: '700' },
+    nextButtonText: { color: '#fff', fontWeight: '700', includeFontPadding: false },
   });
 }

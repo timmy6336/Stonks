@@ -211,7 +211,7 @@ function createStyles(colors: ThemeColors) {
       marginRight: 8,
     },
     chipSelected: { backgroundColor: colors.accent },
-    chipText: { color: colors.text, fontWeight: '600', fontSize: 13 },
+    chipText: { color: colors.text, fontWeight: '600', fontSize: 13, includeFontPadding: false },
     chipTextSelected: { color: '#fff' },
     error: { color: colors.danger, marginBottom: 8 },
     addedNote: { color: colors.accent, textAlign: 'center', marginTop: 12 },
