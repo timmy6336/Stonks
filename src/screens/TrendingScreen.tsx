@@ -11,6 +11,7 @@ import { TickerRow } from '../components/TickerRow';
 import { STOCK_CATEGORIES } from '../data/categories';
 import { useTheme } from '../theme/ThemeContext';
 import type { ThemeColors } from '../theme/theme';
+import { matchesSignalFilter, SignalFilterRow, type SignalFilter } from '../components/SignalFilterRow';
 
 type Props = NativeStackScreenProps<TrendingStackParamList, 'Trending'>;
 
@@ -26,6 +27,7 @@ export function TrendingScreen({ navigation }: Props) {
   const [selectedCategoryId, setSelectedCategoryId] = useState(STOCK_CATEGORIES[0].id);
   const [justAdded, setJustAdded] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [signalFilter, setSignalFilter] = useState<SignalFilter>('ALL');
 
   const loadTrending = useCallback(async () => {
     setTrendingLoading(true);
@@ -86,6 +88,8 @@ export function TrendingScreen({ navigation }: Props) {
       contentContainerStyle={{ padding: 16 }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
     >
+      <SignalFilterRow value={signalFilter} onChange={setSignalFilter} />
+
       <View style={styles.sectionHeader}>
         <Ionicons name="flame" size={18} color={colors.accent} />
         <Text style={styles.sectionTitle}>Trending now</Text>
@@ -94,9 +98,11 @@ export function TrendingScreen({ navigation }: Props) {
       {trendingLoading && trending.rows.length === 0 ? (
         <ActivityIndicator style={{ marginVertical: 12 }} />
       ) : (
-        trending.rows.map((row) => (
-          <TickerRow key={row.symbol} row={row} onPress={goToDetail} onAddToWatchlist={handleAddToWatchlist} />
-        ))
+        trending.rows
+          .filter((row) => matchesSignalFilter(row.signal?.score, signalFilter))
+          .map((row) => (
+            <TickerRow key={row.symbol} row={row} onPress={goToDetail} onAddToWatchlist={handleAddToWatchlist} />
+          ))
       )}
 
       <View style={styles.sectionHeader}>
@@ -111,15 +117,17 @@ export function TrendingScreen({ navigation }: Props) {
       {onSaleLoading && onSale.rows.length === 0 ? (
         <ActivityIndicator style={{ marginVertical: 12 }} />
       ) : (
-        onSale.rows.map((row) => (
-          <TickerRow
-            key={row.symbol}
-            row={row}
-            onPress={goToDetail}
-            onAddToWatchlist={handleAddToWatchlist}
-            showRecoveryHighlight
-          />
-        ))
+        onSale.rows
+          .filter((row) => matchesSignalFilter(row.signal?.score, signalFilter))
+          .map((row) => (
+            <TickerRow
+              key={row.symbol}
+              row={row}
+              onPress={goToDetail}
+              onAddToWatchlist={handleAddToWatchlist}
+              showRecoveryHighlight
+            />
+          ))
       )}
 
       <View style={styles.sectionHeader}>
@@ -140,9 +148,11 @@ export function TrendingScreen({ navigation }: Props) {
         ))}
       </ScrollView>
 
-      {category.rows.map((row) => (
-        <TickerRow key={row.symbol} row={row} onPress={goToDetail} onAddToWatchlist={handleAddToWatchlist} />
-      ))}
+      {category.rows
+        .filter((row) => matchesSignalFilter(row.signal?.score, signalFilter))
+        .map((row) => (
+          <TickerRow key={row.symbol} row={row} onPress={goToDetail} onAddToWatchlist={handleAddToWatchlist} />
+        ))}
 
       {justAdded && <Text style={styles.addedNote}>Added {justAdded} to your watchlist.</Text>}
     </ScrollView>

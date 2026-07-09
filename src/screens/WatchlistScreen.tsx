@@ -21,6 +21,7 @@ import { useTheme } from '../theme/ThemeContext';
 import type { ThemeColors } from '../theme/theme';
 import type { Quote, Signal } from '../types';
 import { SignalBadge } from '../components/SignalBadge';
+import { matchesSignalFilter, SignalFilterRow, type SignalFilter } from '../components/SignalFilterRow';
 
 type Props = NativeStackScreenProps<WatchlistStackParamList, 'Watchlist'>;
 
@@ -41,6 +42,7 @@ export function WatchlistScreen({ navigation }: Props) {
   const [adding, setAdding] = useState(false);
   const [searchResults, setSearchResults] = useState<SymbolSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
+  const [signalFilter, setSignalFilter] = useState<SignalFilter>('ALL');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -183,11 +185,13 @@ export function WatchlistScreen({ navigation }: Props) {
         </View>
       )}
 
+      {rows.length > 0 && <SignalFilterRow value={signalFilter} onChange={setSignalFilter} />}
+
       {loading ? (
         <ActivityIndicator style={{ marginTop: 24 }} />
       ) : (
         <FlatList
-          data={rows}
+          data={rows.filter((r) => matchesSignalFilter(r.signal?.score, signalFilter))}
           keyExtractor={(r) => r.symbol}
           contentContainerStyle={{ paddingBottom: 24 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
@@ -226,7 +230,9 @@ export function WatchlistScreen({ navigation }: Props) {
           ListEmptyComponent={
             <View style={styles.empty}>
               <Ionicons name="telescope-outline" size={28} color={colors.textMuted} />
-              <Text style={styles.emptyText}>Search above to start tracking a stock.</Text>
+              <Text style={styles.emptyText}>
+                {rows.length === 0 ? 'Search above to start tracking a stock.' : 'No stocks match this filter.'}
+              </Text>
             </View>
           }
         />
