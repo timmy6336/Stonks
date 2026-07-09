@@ -13,13 +13,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { WatchlistStackParamList } from '../navigation/types';
-import { addToWatchlist, getWatchlist, logSignalIfNew, removeFromWatchlist } from '../db/database';
+import { addToWatchlist, getPositions, getWatchlist, logSignalIfNew, removeFromWatchlist } from '../db/database';
 import { fetchHistory, fetchQuote, searchSymbols, type SymbolSearchResult } from '../api/marketData';
 import { computeSignal } from '../signals/signalEngine';
 import { checkAlertsForSymbol } from '../notifications/alertEngine';
 import { useTheme } from '../theme/ThemeContext';
 import type { ThemeColors } from '../theme/theme';
-import type { Quote, Signal } from '../types';
+import type { Position, Quote, Signal } from '../types';
 import { SignalBadge } from '../components/SignalBadge';
 import { matchesSignalFilter, SignalFilterRow, type SignalFilter } from '../components/SignalFilterRow';
 import { sortRows, SortMenuButton, type SortMode } from '../components/SortMenuButton';
@@ -35,6 +35,11 @@ type Row = {
   error?: string;
 };
 
+type Holding = Position & {
+  quote?: Quote;
+  error?: string;
+};
+
 export function WatchlistScreen({ navigation }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -47,6 +52,23 @@ export function WatchlistScreen({ navigation }: Props) {
   const [searching, setSearching] = useState(false);
   const [signalFilter, setSignalFilter] = useState<SignalFilter>('ALL');
   const [sortMode, setSortMode] = useState<SortMode>('DEFAULT');
+  const [holdings, setHoldings] = useState<Holding[]>([]);
+
+  const loadHoldings = useCallback(async () => {
+    const positions = await getPositions();
+    setHoldings(positions.map((p) => ({ ...p })));
+
+    await Promise.all(
+      positions.map(async (p) => {
+        try {
+          const quote = await fetchQuote(p.symbol);
+          setHoldings((prev) => prev.map((h) => (h.symbol === p.symbol ? { ...p, quote } : h)));
+        } catch (e) {
+          setHoldings((prev) => prev.map((h) => (h.symbol === p.symbol ? { ...p, error: (e as Error).message } : h)));
+        }
+      })
+    );
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -86,12 +108,13 @@ export function WatchlistScreen({ navigation }: Props) {
   useFocusEffect(
     useCallback(() => {
       load();
-    }, [load])
+      loadHoldings();
+    }, [load, loadHoldings])
   );
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await load();
+    await Promise.all([load(), loadHoldings()]);
     setRefreshing(false);
   };
 
@@ -190,6 +213,49 @@ export function WatchlistScreen({ navigation }: Props) {
               <Ionicons name="add-circle-outline" size={20} color={colors.accent} />
             </Pressable>
           ))}
+        </View>
+      )}
+
+      {holdings.length > 0 && (
+        <View style={styles.holdingsSection}>
+          <View style={styles.sectionHeaderRow}>
+            <Ionicons name="briefcase" size={16} color={colors.accent} />
+            <Text style={styles.sectionTitle}>Your holdings</Text>
+          </View>
+          {holdings.map((h) => {
+            const value = h.quote ? h.quote.price * h.quantity : null;
+            const pnl = h.quote ? (h.quote.price - h.avgCost) * h.quantity : null;
+            const pnlPercent = h.quote && h.avgCost !== 0 ? ((h.quote.price - h.avgCost) / h.avgCost) * 100 : null;
+            return (
+              <Pressable
+                key={h.symbol}
+                style={styles.holdingRow}
+                onPress={() => navigation.navigate('StockDetail', { symbol: h.symbol })}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.symbol}>{h.symbol}</Text>
+                  <Text style={styles.holdingMeta}>
+                    {h.quantity} sh @ avg ${h.avgCost.toFixed(2)}
+                  </Text>
+                </View>
+                {h.error ? (
+                  <Text style={styles.error}>{h.error}</Text>
+                ) : value !== null && pnl !== null && pnlPercent !== null ? (
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={styles.holdingValue}>${value.toFixed(2)}</Text>
+                    <Text style={[styles.change, { color: pnl >= 0 ? colors.accent : colors.danger }]}>
+                      {pnl >= 0 ? '+' : ''}
+                      {pnl.toFixed(2)} ({pnlPercent >= 0 ? '+' : ''}
+                      {pnlPercent.toFixed(1)}%)
+                    </Text>
+                  </View>
+                ) : (
+                  <ActivityIndicator size="small" />
+                )}
+                <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+              </Pressable>
+            );
+          })}
         </View>
       )}
 
@@ -297,6 +363,20 @@ function createStyles(colors: ThemeColors) {
     },
     searchSymbol: { fontWeight: '700', color: colors.text },
     searchName: { color: colors.textSecondary, fontSize: 12 },
+    holdingsSection: { backgroundColor: colors.card, borderRadius: 12, marginBottom: 12, overflow: 'hidden' },
+    sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 6, padding: 12, paddingBottom: 6 },
+    sectionTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
+    holdingRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.border,
+    },
+    holdingMeta: { color: colors.textMuted, fontSize: 12, marginTop: 2 },
+    holdingValue: { color: colors.text, fontWeight: '700' },
     row: {
       flexDirection: 'row',
       justifyContent: 'space-between',
