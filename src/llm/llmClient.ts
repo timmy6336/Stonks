@@ -1,54 +1,66 @@
 import * as SecureStore from 'expo-secure-store';
+import { getAppStateValue, setAppStateValue } from '../db/database';
+import { LLM_PROVIDERS, getProvider, type LLMProviderId } from './providers';
 
-const API_KEY_STORE_KEY = 'gemini_api_key';
-const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+const ACTIVE_PROVIDER_KEY = 'llm_active_provider';
 
-export async function saveGeminiApiKey(key: string): Promise<void> {
-  await SecureStore.setItemAsync(API_KEY_STORE_KEY, key);
+function keyStoreKey(id: LLMProviderId): string {
+  return `${id}_api_key`;
 }
 
-export async function getGeminiApiKey(): Promise<string | null> {
-  return SecureStore.getItemAsync(API_KEY_STORE_KEY);
+export async function saveProviderApiKey(id: LLMProviderId, key: string): Promise<void> {
+  await SecureStore.setItemAsync(keyStoreKey(id), key);
+  const active = await getAppStateValue(ACTIVE_PROVIDER_KEY);
+  if (!active) {
+    await setAppStateValue(ACTIVE_PROVIDER_KEY, id); // first key saved becomes the default provider
+  }
 }
 
-export async function clearGeminiApiKey(): Promise<void> {
-  await SecureStore.deleteItemAsync(API_KEY_STORE_KEY);
+export async function getProviderApiKey(id: LLMProviderId): Promise<string | null> {
+  return SecureStore.getItemAsync(keyStoreKey(id));
 }
 
-export async function hasGeminiApiKey(): Promise<boolean> {
-  return (await getGeminiApiKey()) !== null;
+export async function clearProviderApiKey(id: LLMProviderId): Promise<void> {
+  await SecureStore.deleteItemAsync(keyStoreKey(id));
 }
 
-type GeminiResponse = {
-  candidates?: Array<{
-    content?: { parts?: Array<{ text?: string }> };
-  }>;
-  error?: { message?: string };
-};
+export async function hasProviderApiKey(id: LLMProviderId): Promise<boolean> {
+  return (await getProviderApiKey(id)) !== null;
+}
 
-/** Sends a prompt to the user's own Gemini API key and returns the generated text. */
+export async function hasAnyApiKey(): Promise<boolean> {
+  const results = await Promise.all(LLM_PROVIDERS.map((p) => hasProviderApiKey(p.id)));
+  return results.some(Boolean);
+}
+
+/** The provider used for AI insights: the user's chosen default, or the first provider with a saved key. */
+export async function getActiveProviderId(): Promise<LLMProviderId | null> {
+  const saved = (await getAppStateValue(ACTIVE_PROVIDER_KEY)) as LLMProviderId | null;
+  if (saved && (await hasProviderApiKey(saved))) return saved;
+  for (const p of LLM_PROVIDERS) {
+    if (await hasProviderApiKey(p.id)) return p.id;
+  }
+  return null;
+}
+
+export async function setActiveProviderId(id: LLMProviderId): Promise<void> {
+  await setAppStateValue(ACTIVE_PROVIDER_KEY, id);
+}
+
+/** Sends a prompt to the user's active AI provider (using their own API key) and returns the generated text. */
 export async function generateInsight(prompt: string): Promise<string> {
-  const apiKey = await getGeminiApiKey();
+  const activeId = await getActiveProviderId();
+  if (!activeId) {
+    throw new Error('No AI provider configured. Add a free API key in Settings first.');
+  }
+  const provider = getProvider(activeId);
+  const apiKey = await getProviderApiKey(activeId);
   if (!apiKey) {
-    throw new Error('No Gemini API key saved. Add a free key from Google AI Studio in Settings first.');
+    throw new Error(`No API key saved for ${provider.name}.`);
   }
-
-  const res = await fetch(`${GEMINI_ENDPOINT}?key=${encodeURIComponent(apiKey)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-    }),
-  });
-
-  const json: GeminiResponse = await res.json();
-  if (!res.ok) {
-    throw new Error(`Gemini API error: ${json.error?.message ?? res.statusText}`);
+  try {
+    return await provider.generate(apiKey, prompt);
+  } catch (e) {
+    throw new Error(`${provider.name} error: ${(e as Error).message}`);
   }
-
-  const text = json.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('') ?? '';
-  if (!text) {
-    throw new Error('Gemini returned an empty response.');
-  }
-  return text;
 }

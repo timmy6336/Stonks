@@ -20,7 +20,7 @@ import { fetchCompanyProfile, fetchHistory, fetchNews, fetchQuote, type NewsItem
 import { computeSignal } from '../signals/signalEngine';
 import { computeTrendPrediction, describeTrendPrediction, type TrendPrediction } from '../predictions/trendPrediction';
 import { runSignalBacktest, type BacktestResult } from '../backtest/backtestEngine';
-import { generateInsight, hasGeminiApiKey } from '../llm/llmClient';
+import { generateInsight, hasAnyApiKey } from '../llm/llmClient';
 import { checkAlertsForSymbol, requestNotificationPermission } from '../notifications/alertEngine';
 import { executeTrade, getActiveTradingMode } from '../trading/tradingService';
 import { createAlert, getPosition, logSignalIfNew } from '../db/database';
@@ -129,7 +129,7 @@ export function StockDetailScreen({ route }: Props) {
       setNews([]); // news is a nice-to-have; don't block the rest of the screen on it
     }
 
-    setHasAiKey(await hasGeminiApiKey());
+    setHasAiKey(await hasAnyApiKey());
   }, [symbol]);
 
   useFocusEffect(
@@ -433,7 +433,7 @@ export function StockDetailScreen({ route }: Props) {
       <View style={styles.card}>
         <CardTitle icon="sparkles">AI insight</CardTitle>
         {!hasAiKey ? (
-          <Text style={styles.reason}>Add a free Gemini API key in Settings to get an AI-generated take on this stock.</Text>
+          <Text style={styles.reason}>Add a free AI provider API key in Settings to get an AI-generated take on this stock.</Text>
         ) : (
           <>
             <Pressable style={styles.aiButton} onPress={handleAskAi} disabled={aiLoading}>

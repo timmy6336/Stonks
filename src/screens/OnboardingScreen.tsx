@@ -39,7 +39,7 @@ const SLIDES: Slide[] = [
     icon: 'notifications',
     title: 'Alerts & AI insights',
     body:
-      'Set price or signal alerts per stock, and optionally add your own free Gemini API key in Settings to get an AI-generated take on any stock. You can revisit all of this anytime from Settings.',
+      'Set price or signal alerts per stock, and optionally add a free API key from Gemini, Groq, OpenRouter, or Mistral in Settings to get an AI-generated take on any stock. You can revisit all of this anytime from Settings.',
   },
 ];
 

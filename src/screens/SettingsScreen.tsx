@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Alert, Linking, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -12,7 +12,14 @@ import {
   saveAlpacaCredentials,
   setLiveTradingEnabled,
 } from '../alpaca/alpacaClient';
-import { clearGeminiApiKey, hasGeminiApiKey, saveGeminiApiKey } from '../llm/llmClient';
+import {
+  clearProviderApiKey,
+  getActiveProviderId,
+  hasProviderApiKey,
+  saveProviderApiKey,
+  setActiveProviderId,
+} from '../llm/llmClient';
+import { LLM_PROVIDERS, type LLMProviderId } from '../llm/providers';
 import { useTheme } from '../theme/ThemeContext';
 import type { ThemeColors } from '../theme/theme';
 
@@ -27,15 +34,22 @@ export function SettingsScreen({ navigation }: Props) {
   const [liveEnabled, setLiveEnabled] = useState(false);
   const [saving, setSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [geminiKeyInput, setGeminiKeyInput] = useState('');
-  const [hasGeminiKey, setHasGeminiKey] = useState(false);
-  const [savingGemini, setSavingGemini] = useState(false);
+  const [providerKeyInputs, setProviderKeyInputs] = useState<Record<LLMProviderId, string>>(
+    Object.fromEntries(LLM_PROVIDERS.map((p) => [p.id, ''])) as Record<LLMProviderId, string>
+  );
+  const [providerHasKey, setProviderHasKey] = useState<Record<LLMProviderId, boolean>>(
+    Object.fromEntries(LLM_PROVIDERS.map((p) => [p.id, false])) as Record<LLMProviderId, boolean>
+  );
+  const [activeProviderId, setActiveProviderIdState] = useState<LLMProviderId | null>(null);
+  const [savingProviderId, setSavingProviderId] = useState<LLMProviderId | null>(null);
 
   const load = useCallback(async () => {
     const creds = await getAlpacaCredentials();
     setHasCredentials(!!creds);
     setLiveEnabled(await isLiveTradingEnabled());
-    setHasGeminiKey(await hasGeminiApiKey());
+    const keyChecks = await Promise.all(LLM_PROVIDERS.map((p) => hasProviderApiKey(p.id)));
+    setProviderHasKey(Object.fromEntries(LLM_PROVIDERS.map((p, i) => [p.id, keyChecks[i]])) as Record<LLMProviderId, boolean>);
+    setActiveProviderIdState(await getActiveProviderId());
   }, []);
 
   useFocusEffect(
@@ -68,26 +82,33 @@ export function SettingsScreen({ navigation }: Props) {
     setStatusMessage('Alpaca credentials removed. Live trading disabled.');
   };
 
-  const handleSaveGemini = async () => {
-    if (!geminiKeyInput.trim()) {
-      setStatusMessage('Enter a Gemini API key.');
+  const handleSaveProviderKey = async (id: LLMProviderId) => {
+    const value = providerKeyInputs[id].trim();
+    if (!value) {
+      setStatusMessage('Enter an API key.');
       return;
     }
-    setSavingGemini(true);
+    setSavingProviderId(id);
     try {
-      await saveGeminiApiKey(geminiKeyInput.trim());
-      setGeminiKeyInput('');
+      await saveProviderApiKey(id, value);
+      setProviderKeyInputs((prev) => ({ ...prev, [id]: '' }));
       await load();
-      setStatusMessage('Gemini API key saved.');
+      setStatusMessage(`${LLM_PROVIDERS.find((p) => p.id === id)!.name} API key saved.`);
     } finally {
-      setSavingGemini(false);
+      setSavingProviderId(null);
     }
   };
 
-  const handleClearGemini = async () => {
-    await clearGeminiApiKey();
+  const handleClearProviderKey = async (id: LLMProviderId) => {
+    await clearProviderApiKey(id);
     await load();
-    setStatusMessage('Gemini API key removed.');
+    setStatusMessage(`${LLM_PROVIDERS.find((p) => p.id === id)!.name} API key removed.`);
+  };
+
+  const handleUseProvider = async (id: LLMProviderId) => {
+    await setActiveProviderId(id);
+    await load();
+    setStatusMessage(`${LLM_PROVIDERS.find((p) => p.id === id)!.name} is now your active AI provider.`);
   };
 
   const handleToggleLive = async (value: boolean) => {
@@ -201,44 +222,77 @@ export function SettingsScreen({ navigation }: Props) {
         <Text style={styles.sectionTitle}>AI insights (optional)</Text>
       </View>
       <Text style={styles.helpText}>
-        Add your own free Gemini API key (from Google AI Studio, aistudio.google.com) to get an AI-generated take on
-        any stock's detail page. Stored only on this device; never sent anywhere but Google's API.
+        Add your own API key from any of these providers to get an AI-generated take on any stock's detail page.
+        Keys are stored only on this device; more providers can be added later. If you save more than one, the
+        first one you save becomes active — tap "Use this" on another to switch.
       </Text>
-      <TextInput
-        style={styles.input}
-        placeholder="Gemini API key"
-        placeholderTextColor={colors.textMuted}
-        autoCapitalize="none"
-        secureTextEntry
-        value={geminiKeyInput}
-        onChangeText={setGeminiKeyInput}
-      />
-      <Pressable style={styles.saveButton} onPress={handleSaveGemini} disabled={savingGemini}>
-        {savingGemini ? (
-          <Text style={styles.saveButtonText}>Saving…</Text>
-        ) : (
-          <>
-            <Ionicons name="save" size={16} color="#fff" />
-            <Text style={styles.saveButtonText}>Save Gemini key</Text>
-          </>
-        )}
-      </Pressable>
-      <View style={styles.credentialStatusRow}>
-        <Ionicons
-          name={hasGeminiKey ? 'checkmark-circle' : 'alert-circle-outline'}
-          size={14}
-          color={hasGeminiKey ? colors.accent : colors.textMuted}
-        />
-        <Text style={styles.credentialStatus}>
-          {hasGeminiKey ? 'Gemini API key is saved on this device.' : 'No Gemini API key saved yet.'}
-        </Text>
-      </View>
-      {hasGeminiKey && (
-        <Pressable style={styles.clearLinkRow} onPress={handleClearGemini}>
-          <Ionicons name="trash-outline" size={14} color={colors.danger} />
-          <Text style={styles.clearLink}>Remove saved key</Text>
-        </Pressable>
-      )}
+      {LLM_PROVIDERS.map((provider) => {
+        const isActive = activeProviderId === provider.id;
+        const hasKey = providerHasKey[provider.id];
+        return (
+          <View key={provider.id} style={styles.providerCard}>
+            <View style={styles.providerHeaderRow}>
+              <Text style={styles.providerName}>{provider.name}</Text>
+              {isActive && (
+                <View style={styles.activeBadge}>
+                  <Text style={styles.activeBadgeText}>ACTIVE</Text>
+                </View>
+              )}
+            </View>
+            <Text style={styles.providerNote}>{provider.freeTierNote}</Text>
+            <Pressable style={styles.linkRow} onPress={() => Linking.openURL(provider.apiKeyUrl)}>
+              <Ionicons name="open-outline" size={14} color={colors.accent} />
+              <Text style={styles.link}>Get a free {provider.name} API key</Text>
+            </Pressable>
+
+            {hasKey ? (
+              <>
+                <View style={styles.credentialStatusRow}>
+                  <Ionicons name="checkmark-circle" size={14} color={colors.accent} />
+                  <Text style={styles.credentialStatus}>API key saved on this device.</Text>
+                </View>
+                <View style={styles.providerActionRow}>
+                  {!isActive && (
+                    <Pressable style={styles.useButton} onPress={() => handleUseProvider(provider.id)}>
+                      <Text style={styles.useButtonText}>Use this</Text>
+                    </Pressable>
+                  )}
+                  <Pressable style={styles.clearLinkRow} onPress={() => handleClearProviderKey(provider.id)}>
+                    <Ionicons name="trash-outline" size={14} color={colors.danger} />
+                    <Text style={styles.clearLink}>Remove key</Text>
+                  </Pressable>
+                </View>
+              </>
+            ) : (
+              <>
+                <TextInput
+                  style={styles.input}
+                  placeholder={`${provider.name} API key`}
+                  placeholderTextColor={colors.textMuted}
+                  autoCapitalize="none"
+                  secureTextEntry
+                  value={providerKeyInputs[provider.id]}
+                  onChangeText={(text) => setProviderKeyInputs((prev) => ({ ...prev, [provider.id]: text }))}
+                />
+                <Pressable
+                  style={styles.saveButton}
+                  onPress={() => handleSaveProviderKey(provider.id)}
+                  disabled={savingProviderId === provider.id}
+                >
+                  {savingProviderId === provider.id ? (
+                    <Text style={styles.saveButtonText}>Saving…</Text>
+                  ) : (
+                    <>
+                      <Ionicons name="save" size={16} color="#fff" />
+                      <Text style={styles.saveButtonText}>Save key</Text>
+                    </>
+                  )}
+                </Pressable>
+              </>
+            )}
+          </View>
+        );
+      })}
 
       {statusMessage && (
         <View style={styles.statusRow}>
@@ -297,6 +351,17 @@ function createStyles(colors: ThemeColors) {
     clearLinkRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
     clearLink: { color: colors.danger },
     divider: { height: 1, backgroundColor: colors.border, marginVertical: 24 },
+    providerCard: { backgroundColor: colors.card, borderRadius: 12, padding: 14, marginBottom: 12 },
+    providerHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
+    providerName: { fontSize: 15, fontWeight: '700', color: colors.text },
+    activeBadge: { backgroundColor: colors.accent, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 },
+    activeBadgeText: { color: '#fff', fontSize: 10, fontWeight: '700', includeFontPadding: false },
+    providerNote: { color: colors.textSecondary, fontSize: 12, lineHeight: 17, marginBottom: 6 },
+    linkRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
+    link: { color: colors.accent, fontSize: 13 },
+    providerActionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 },
+    useButton: { backgroundColor: colors.chipBackground, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
+    useButtonText: { color: colors.text, fontWeight: '600', fontSize: 12, includeFontPadding: false },
     liveRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
     statusRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16 },
     status: { color: colors.accent },

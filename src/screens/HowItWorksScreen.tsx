@@ -51,7 +51,7 @@ const SECTIONS: Section[] = [
     icon: 'sparkles-outline',
     title: 'AI insights (optional)',
     body:
-      "If you add your own free Gemini API key in Settings, the stock detail page can generate a short plain-English summary using Google's Gemini API. Your key is stored only on this device and used only to call Google's API directly.",
+      "If you add your own free API key from any supported provider (Gemini, Groq, OpenRouter, or Mistral) in Settings, the stock detail page can generate a short plain-English summary. Your key is stored only on this device and used only to call that provider's API directly.",
   },
   {
     icon: 'notifications-outline',
