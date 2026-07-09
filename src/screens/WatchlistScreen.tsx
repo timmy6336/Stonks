@@ -22,6 +22,9 @@ import type { ThemeColors } from '../theme/theme';
 import type { Quote, Signal } from '../types';
 import { SignalBadge } from '../components/SignalBadge';
 import { matchesSignalFilter, SignalFilterRow, type SignalFilter } from '../components/SignalFilterRow';
+import { sortRows, SortMenuButton, type SortMode } from '../components/SortMenuButton';
+import { SwipeToDelete } from '../components/SwipeToDelete';
+import { hapticSuccess, hapticTap } from '../haptics/haptics';
 
 type Props = NativeStackScreenProps<WatchlistStackParamList, 'Watchlist'>;
 
@@ -43,6 +46,7 @@ export function WatchlistScreen({ navigation }: Props) {
   const [searchResults, setSearchResults] = useState<SymbolSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [signalFilter, setSignalFilter] = useState<SignalFilter>('ALL');
+  const [sortMode, setSortMode] = useState<SortMode>('DEFAULT');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -115,6 +119,7 @@ export function WatchlistScreen({ navigation }: Props) {
     setAdding(true);
     try {
       await addToWatchlist(symbol);
+      hapticSuccess();
       setNewSymbol('');
       setSearchResults([]);
       await load();
@@ -130,6 +135,7 @@ export function WatchlistScreen({ navigation }: Props) {
     try {
       await fetchQuote(symbol); // validates the symbol exists before saving
       await addToWatchlist(symbol);
+      hapticSuccess();
       setNewSymbol('');
       setSearchResults([]);
       await load();
@@ -141,6 +147,7 @@ export function WatchlistScreen({ navigation }: Props) {
   };
 
   const handleRemove = async (symbol: string) => {
+    hapticTap();
     await removeFromWatchlist(symbol);
     await load();
   };
@@ -185,47 +192,54 @@ export function WatchlistScreen({ navigation }: Props) {
         </View>
       )}
 
-      {rows.length > 0 && <SignalFilterRow value={signalFilter} onChange={setSignalFilter} />}
+      {rows.length > 0 && (
+        <>
+          <SignalFilterRow value={signalFilter} onChange={setSignalFilter} />
+          <SortMenuButton value={sortMode} onChange={setSortMode} />
+        </>
+      )}
 
       {loading ? (
         <ActivityIndicator style={{ marginTop: 24 }} />
       ) : (
         <FlatList
-          data={rows.filter((r) => matchesSignalFilter(r.signal?.score, signalFilter))}
+          data={sortRows(rows.filter((r) => matchesSignalFilter(r.signal?.score, signalFilter)), sortMode)}
           keyExtractor={(r) => r.symbol}
           contentContainerStyle={{ paddingBottom: 24 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
           renderItem={({ item }) => (
-            <Pressable
-              style={styles.row}
-              onPress={() => navigation.navigate('StockDetail', { symbol: item.symbol })}
-              onLongPress={() => handleRemove(item.symbol)}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={styles.symbol}>{item.symbol}</Text>
-                {item.error ? (
-                  <Text style={styles.error}>{item.error}</Text>
-                ) : item.quote ? (
-                  <Text style={[styles.change, { color: item.quote.change >= 0 ? colors.accent : colors.danger }]}>
-                    ${item.quote.price.toFixed(2)} ({item.quote.change >= 0 ? '+' : ''}
-                    {item.quote.changePercent.toFixed(2)}%)
-                  </Text>
-                ) : (
-                  <ActivityIndicator size="small" />
-                )}
-              </View>
-              {item.signal && <SignalBadge score={item.signal.score} />}
+            <SwipeToDelete onDelete={() => handleRemove(item.symbol)}>
               <Pressable
-                hitSlop={8}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  handleRemove(item.symbol);
-                }}
+                style={styles.row}
+                onPress={() => navigation.navigate('StockDetail', { symbol: item.symbol })}
+                onLongPress={() => handleRemove(item.symbol)}
               >
-                <Ionicons name="trash-outline" size={18} color={colors.danger} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.symbol}>{item.symbol}</Text>
+                  {item.error ? (
+                    <Text style={styles.error}>{item.error}</Text>
+                  ) : item.quote ? (
+                    <Text style={[styles.change, { color: item.quote.change >= 0 ? colors.accent : colors.danger }]}>
+                      ${item.quote.price.toFixed(2)} ({item.quote.change >= 0 ? '+' : ''}
+                      {item.quote.changePercent.toFixed(2)}%)
+                    </Text>
+                  ) : (
+                    <ActivityIndicator size="small" />
+                  )}
+                </View>
+                {item.signal && <SignalBadge score={item.signal.score} />}
+                <Pressable
+                  hitSlop={8}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    handleRemove(item.symbol);
+                  }}
+                >
+                  <Ionicons name="trash-outline" size={18} color={colors.danger} />
+                </Pressable>
+                <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
               </Pressable>
-              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-            </Pressable>
+            </SwipeToDelete>
           )}
           ListEmptyComponent={
             <View style={styles.empty}>

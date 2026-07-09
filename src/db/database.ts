@@ -209,6 +209,22 @@ export async function deleteProfile(profileId: number): Promise<void> {
   });
 }
 
+// --- Generic app-state key/value storage (remembered UI preferences, onboarding flags, etc.) ---
+
+export async function getAppStateValue(key: string): Promise<string | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM app_state WHERE key = ?', key);
+  return row?.value ?? null;
+}
+
+export async function setAppStateValue(key: string, value: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    'INSERT INTO app_state (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+    key, value
+  );
+}
+
 export async function renameProfile(profileId: number, name: string): Promise<void> {
   const db = await getDb();
   await db.runAsync('UPDATE profiles SET name = ? WHERE id = ?', name.trim() || 'Untitled save', profileId);

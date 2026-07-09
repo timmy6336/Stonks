@@ -26,6 +26,7 @@ import { executeTrade, getActiveTradingMode } from '../trading/tradingService';
 import { createAlert, getPosition } from '../db/database';
 import { useTheme } from '../theme/ThemeContext';
 import { hexToRgba, type ThemeColors } from '../theme/theme';
+import { hapticSuccess } from '../haptics/haptics';
 import type { AlertType, Candle, CompanyProfile, Position, Quote, Signal, TradingMode } from '../types';
 import { SignalBadge } from '../components/SignalBadge';
 import type { TradeSide } from '../types';
@@ -169,6 +170,7 @@ export function StockDetailScreen({ route }: Props) {
     try {
       await requestNotificationPermission();
       await createAlert(symbol, alertType, threshold);
+      hapticSuccess();
       setAlertSaved(true);
     } catch (e) {
       setAlertError((e as Error).message);
@@ -192,6 +194,7 @@ export function StockDetailScreen({ route }: Props) {
     setTradeError(null);
     try {
       await executeTrade(symbol, tradeSide, qty, quote.price);
+      hapticSuccess();
       setTradeSide(null);
       await load();
     } catch (e) {
