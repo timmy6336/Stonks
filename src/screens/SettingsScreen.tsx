@@ -2,6 +2,8 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { SettingsStackParamList } from '../navigation/types';
 import {
   clearAlpacaCredentials,
   getAlpacaAccount,
@@ -14,7 +16,9 @@ import { clearGeminiApiKey, hasGeminiApiKey, saveGeminiApiKey } from '../llm/llm
 import { useTheme } from '../theme/ThemeContext';
 import type { ThemeColors } from '../theme/theme';
 
-export function SettingsScreen() {
+type Props = NativeStackScreenProps<SettingsStackParamList, 'Settings'>;
+
+export function SettingsScreen({ navigation }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [keyId, setKeyId] = useState('');
@@ -242,6 +246,23 @@ export function SettingsScreen() {
           <Text style={styles.status}>{statusMessage}</Text>
         </View>
       )}
+
+      <View style={styles.divider} />
+
+      <View style={styles.sectionHeader}>
+        <Ionicons name="information-circle" size={16} color={colors.accent} />
+        <Text style={styles.sectionTitle}>More</Text>
+      </View>
+      <Pressable style={styles.navRow} onPress={() => navigation.navigate('HowItWorks')}>
+        <Ionicons name="help-circle-outline" size={18} color={colors.text} />
+        <Text style={styles.navRowText}>How this works</Text>
+        <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+      </Pressable>
+      <Pressable style={styles.navRow} onPress={() => navigation.navigate('SignalTrackRecord')}>
+        <Ionicons name="stats-chart-outline" size={18} color={colors.text} />
+        <Text style={styles.navRowText}>Signal track record</Text>
+        <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+      </Pressable>
     </ScrollView>
   );
 }
@@ -279,5 +300,14 @@ function createStyles(colors: ThemeColors) {
     liveRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
     statusRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16 },
     status: { color: colors.accent },
+    navRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      paddingVertical: 12,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+    },
+    navRowText: { color: colors.text, flex: 1, fontWeight: '600' },
   });
 }

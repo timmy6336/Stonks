@@ -1,5 +1,5 @@
 import * as SQLite from 'expo-sqlite';
-import type { Alert, AlertType, Position, Profile, Trade, TradeMode, TradeSide, WatchlistItem } from '../types';
+import type { Alert, AlertType, Position, Profile, SignalScore, Trade, TradeMode, TradeSide, WatchlistItem } from '../types';
 
 export const DEFAULT_STARTING_CASH = 100_000;
 const ACTIVE_PROFILE_KEY = 'active_profile_id';
@@ -50,6 +50,14 @@ function getDb(): Promise<SQLite.SQLiteDatabase> {
           threshold REAL,
           created_at INTEGER NOT NULL,
           triggered_at INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS signal_log (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          symbol TEXT NOT NULL,
+          score TEXT NOT NULL,
+          points INTEGER NOT NULL,
+          price REAL NOT NULL,
+          logged_at INTEGER NOT NULL
         );
       `);
 
@@ -422,4 +430,44 @@ export async function markAlertTriggered(id: number): Promise<void> {
 export async function resetAlert(id: number): Promise<void> {
   const db = await getDb();
   await db.runAsync('UPDATE alerts SET triggered_at = NULL WHERE id = ?', id);
+}
+
+// --- Signal track record (logs signals over time so we can check whether they were right) ---
+
+export type SignalLogEntry = {
+  id: number;
+  symbol: string;
+  score: SignalScore;
+  points: number;
+  price: number;
+  loggedAt: number;
+};
+
+/** Logs a signal snapshot at most once per symbol per calendar day. */
+export async function logSignalIfNew(symbol: string, score: SignalScore, points: number, price: number): Promise<void> {
+  const db = await getDb();
+  const upperSymbol = symbol.toUpperCase();
+  const dayStart = new Date().setHours(0, 0, 0, 0);
+  const existing = await db.getFirstAsync<{ id: number }>(
+    'SELECT id FROM signal_log WHERE symbol = ? AND logged_at >= ? LIMIT 1',
+    upperSymbol, dayStart
+  );
+  if (existing) return;
+  await db.runAsync(
+    'INSERT INTO signal_log (symbol, score, points, price, logged_at) VALUES (?, ?, ?, ?, ?)',
+    upperSymbol, score, points, price, Date.now()
+  );
+}
+
+export async function getSignalLog(limit = 500): Promise<SignalLogEntry[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<any>('SELECT * FROM signal_log ORDER BY logged_at DESC LIMIT ?', limit);
+  return rows.map((r) => ({
+    id: r.id,
+    symbol: r.symbol,
+    score: r.score,
+    points: r.points,
+    price: r.price,
+    loggedAt: r.logged_at,
+  }));
 }

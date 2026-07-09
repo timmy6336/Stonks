@@ -13,7 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { WatchlistStackParamList } from '../navigation/types';
-import { addToWatchlist, getWatchlist, removeFromWatchlist } from '../db/database';
+import { addToWatchlist, getWatchlist, logSignalIfNew, removeFromWatchlist } from '../db/database';
 import { fetchHistory, fetchQuote, searchSymbols, type SymbolSearchResult } from '../api/marketData';
 import { computeSignal } from '../signals/signalEngine';
 import { checkAlertsForSymbol } from '../notifications/alertEngine';
@@ -63,6 +63,7 @@ export function WatchlistScreen({ navigation }: Props) {
             fetchHistory(item.symbol, '6mo', '1d'),
           ]);
           const signal = computeSignal(item.symbol, history);
+          logSignalIfNew(item.symbol, signal.score, signal.points, quote.price).catch(() => {}); // best-effort track record logging
           setRows((prev) => {
             const next = [...prev];
             const idx = next.findIndex((r) => r.symbol === item.symbol);

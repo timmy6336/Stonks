@@ -38,6 +38,12 @@ export type CompanyProfile = {
   summary: string | null;
   website: string | null;
   employees: number | null;
+  fiftyTwoWeekHigh: number | null;
+  fiftyTwoWeekLow: number | null;
+  volume: number | null;
+  averageVolume: number | null;
+  dividendYield: number | null;
+  nextEarningsDate: number | null; // unix millis
 };
 
 export type AlertType = 'PRICE_ABOVE' | 'PRICE_BELOW' | 'SIGNAL_BUY_OR_BETTER' | 'SIGNAL_STRONG_BUY';

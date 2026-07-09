@@ -9,6 +9,7 @@ export type WatchlistStackParamList = {
 export type TrendingStackParamList = {
   Trending: undefined;
   StockDetail: StockDetailParams;
+  Compare: undefined;
 };
 
 export type PortfolioStackParamList = {
@@ -16,9 +17,15 @@ export type PortfolioStackParamList = {
   Profiles: undefined;
 };
 
+export type SettingsStackParamList = {
+  Settings: undefined;
+  HowItWorks: undefined;
+  SignalTrackRecord: undefined;
+};
+
 export type RootTabParamList = {
   WatchlistTab: undefined;
   TrendingTab: undefined;
   PortfolioTab: undefined;
-  Settings: undefined;
+  SettingsTab: undefined;
 };

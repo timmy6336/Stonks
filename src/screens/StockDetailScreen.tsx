@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Dimensions,
   ActivityIndicator,
@@ -23,7 +23,7 @@ import { runSignalBacktest, type BacktestResult } from '../backtest/backtestEngi
 import { generateInsight, hasGeminiApiKey } from '../llm/llmClient';
 import { checkAlertsForSymbol, requestNotificationPermission } from '../notifications/alertEngine';
 import { executeTrade, getActiveTradingMode } from '../trading/tradingService';
-import { createAlert, getPosition } from '../db/database';
+import { createAlert, getPosition, logSignalIfNew } from '../db/database';
 import { useTheme } from '../theme/ThemeContext';
 import { hexToRgba, type ThemeColors } from '../theme/theme';
 import { hapticSuccess } from '../haptics/haptics';
@@ -34,6 +34,17 @@ import type { TradeSide } from '../types';
 type Props = {
   route: { params: StockDetailParams };
 };
+
+type ChartRangeKey = '1D' | '1W' | '1M' | '6M' | '1Y' | '5Y';
+
+const CHART_RANGES: { key: ChartRangeKey; range: string; interval: string }[] = [
+  { key: '1D', range: '1d', interval: '5m' },
+  { key: '1W', range: '5d', interval: '30m' },
+  { key: '1M', range: '1mo', interval: '1d' },
+  { key: '6M', range: '6mo', interval: '1d' },
+  { key: '1Y', range: '1y', interval: '1d' },
+  { key: '5Y', range: '5y', interval: '1wk' },
+];
 
 function CardTitle({ icon, children }: { icon: keyof typeof Ionicons.glyphMap; children: string }) {
   const { colors } = useTheme();
@@ -51,6 +62,9 @@ export function StockDetailScreen({ route }: Props) {
   const { symbol } = route.params;
   const [quote, setQuote] = useState<Quote | null>(null);
   const [candles, setCandles] = useState<Candle[]>([]);
+  const [chartRangeKey, setChartRangeKey] = useState<ChartRangeKey>('6M');
+  const [chartCandles, setChartCandles] = useState<Candle[]>([]);
+  const [chartLoading, setChartLoading] = useState(true);
   const [signal, setSignal] = useState<Signal | null>(null);
   const [prediction, setPrediction] = useState<TrendPrediction | null>(null);
   const [profile, setProfile] = useState<CompanyProfile | null>(null);
@@ -88,6 +102,7 @@ export function StockDetailScreen({ route }: Props) {
         getActiveTradingMode(),
       ]);
       const sig = computeSignal(symbol, history);
+      logSignalIfNew(symbol, sig.score, sig.points, q.price).catch(() => {}); // best-effort track record logging
       setQuote(q);
       setCandles(history);
       setSignal(sig);
@@ -122,6 +137,26 @@ export function StockDetailScreen({ route }: Props) {
       load();
     }, [load])
   );
+
+  // Chart range is independent of the fixed 6-month window used for the signal/prediction/backtest.
+  useEffect(() => {
+    let cancelled = false;
+    const { range, interval } = CHART_RANGES.find((r) => r.key === chartRangeKey)!;
+    setChartLoading(true);
+    fetchHistory(symbol, range, interval)
+      .then((data) => {
+        if (!cancelled) setChartCandles(data);
+      })
+      .catch(() => {
+        if (!cancelled) setChartCandles([]);
+      })
+      .finally(() => {
+        if (!cancelled) setChartLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [symbol, chartRangeKey]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -221,7 +256,7 @@ export function StockDetailScreen({ route }: Props) {
   }
 
   const chartWidth = Dimensions.get('window').width - 32;
-  const chartData = candles.filter((_, i) => i % Math.ceil(candles.length / 60 || 1) === 0);
+  const chartData = chartCandles.filter((_, i) => i % Math.ceil(chartCandles.length / 60 || 1) === 0);
 
   return (
     <ScrollView
@@ -241,7 +276,21 @@ export function StockDetailScreen({ route }: Props) {
         {signal && <SignalBadge score={signal.score} />}
       </View>
 
-      {chartData.length > 1 && (
+      <View style={styles.rangeRow}>
+        {CHART_RANGES.map((r) => (
+          <Pressable
+            key={r.key}
+            style={[styles.rangeChip, chartRangeKey === r.key && styles.rangeChipSelected]}
+            onPress={() => setChartRangeKey(r.key)}
+          >
+            <Text style={[styles.rangeChipText, chartRangeKey === r.key && styles.rangeChipTextSelected]}>{r.key}</Text>
+          </Pressable>
+        ))}
+      </View>
+
+      {chartLoading && chartData.length === 0 ? (
+        <ActivityIndicator style={{ marginVertical: 24 }} />
+      ) : chartData.length > 1 ? (
         <LineChart
           data={{ labels: [], datasets: [{ data: chartData.map((c) => c.close) }] }}
           width={chartWidth}
@@ -260,6 +309,48 @@ export function StockDetailScreen({ route }: Props) {
           bezier
           style={{ marginVertical: 8, borderRadius: 12 }}
         />
+      ) : (
+        <Text style={[styles.reason, { marginVertical: 12 }]}>No chart data available for this range.</Text>
+      )}
+
+      {profile && (profile.fiftyTwoWeekHigh || profile.volume || profile.dividendYield || profile.nextEarningsDate) && (
+        <View style={styles.card}>
+          <CardTitle icon="stats-chart">Key stats</CardTitle>
+          <View style={styles.statsGrid}>
+            {profile.fiftyTwoWeekLow != null && profile.fiftyTwoWeekHigh != null && (
+              <View style={styles.statItem}>
+                <Text style={styles.statLabel}>52-week range</Text>
+                <Text style={styles.statValue}>
+                  ${profile.fiftyTwoWeekLow.toFixed(2)} - ${profile.fiftyTwoWeekHigh.toFixed(2)}
+                </Text>
+              </View>
+            )}
+            {profile.volume != null && (
+              <View style={styles.statItem}>
+                <Text style={styles.statLabel}>Volume</Text>
+                <Text style={styles.statValue}>{profile.volume.toLocaleString()}</Text>
+              </View>
+            )}
+            {profile.averageVolume != null && (
+              <View style={styles.statItem}>
+                <Text style={styles.statLabel}>Avg. volume</Text>
+                <Text style={styles.statValue}>{profile.averageVolume.toLocaleString()}</Text>
+              </View>
+            )}
+            {profile.dividendYield != null && (
+              <View style={styles.statItem}>
+                <Text style={styles.statLabel}>Dividend yield</Text>
+                <Text style={styles.statValue}>{(profile.dividendYield * 100).toFixed(2)}%</Text>
+              </View>
+            )}
+            {profile.nextEarningsDate != null && (
+              <View style={styles.statItem}>
+                <Text style={styles.statLabel}>Next earnings</Text>
+                <Text style={styles.statValue}>{new Date(profile.nextEarningsDate).toLocaleDateString()}</Text>
+              </View>
+            )}
+          </View>
+        </View>
       )}
 
       {signal && (
@@ -498,6 +589,21 @@ function createStyles(colors: ThemeColors) {
     symbol: { fontSize: 22, fontWeight: '700', color: colors.text },
     price: { fontSize: 28, fontWeight: '600', marginTop: 4, color: colors.text },
     card: { backgroundColor: colors.card, borderRadius: 12, padding: 14, marginTop: 16 },
+    rangeRow: { flexDirection: 'row', gap: 8, marginTop: 14 },
+    rangeChip: {
+      flex: 1,
+      alignItems: 'center',
+      paddingVertical: 6,
+      borderRadius: 8,
+      backgroundColor: colors.chipBackground,
+    },
+    rangeChipSelected: { backgroundColor: colors.accent },
+    rangeChipText: { color: colors.text, fontWeight: '600', fontSize: 12 },
+    rangeChipTextSelected: { color: '#fff' },
+    statsGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+    statItem: { width: '50%', marginBottom: 10 },
+    statLabel: { color: colors.textMuted, fontSize: 11 },
+    statValue: { color: colors.text, fontWeight: '700', fontSize: 15, marginTop: 2 },
     cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
     cardTitle: { fontWeight: '700', color: colors.text },
     reason: { marginBottom: 4, color: colors.text, lineHeight: 20 },

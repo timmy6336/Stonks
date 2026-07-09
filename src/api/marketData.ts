@@ -118,27 +118,49 @@ type QuoteSummaryResponse = {
         website?: string;
         fullTimeEmployees?: number;
       };
+      summaryDetail?: {
+        fiftyTwoWeekHigh?: number;
+        fiftyTwoWeekLow?: number;
+        volume?: number;
+        averageVolume?: number;
+        dividendYield?: number;
+      };
+      calendarEvents?: {
+        earnings?: { earningsDate?: number[] };
+      };
     }> | null;
     error: { code: string; description: string } | null;
   };
 };
 
 export async function fetchCompanyProfile(symbol: string): Promise<CompanyProfile | null> {
-  const res = await fetch(`${QUOTE_SUMMARY_BASE}/${encodeURIComponent(symbol)}?modules=assetProfile`);
+  const res = await fetch(
+    `${QUOTE_SUMMARY_BASE}/${encodeURIComponent(symbol)}?modules=assetProfile,summaryDetail,calendarEvents&formatted=false`
+  );
   if (!res.ok) {
     throw new Error(`Company profile request failed for ${symbol}: HTTP ${res.status}`);
   }
   const json: QuoteSummaryResponse = await res.json();
-  const profile = json.quoteSummary.result?.[0]?.assetProfile;
-  if (json.quoteSummary.error || !profile) return null;
+  const result = json.quoteSummary.result?.[0];
+  if (json.quoteSummary.error || !result) return null;
+
+  const profile = result.assetProfile;
+  const stats = result.summaryDetail;
+  const earningsDate = result.calendarEvents?.earnings?.earningsDate?.[0];
 
   return {
     symbol: symbol.toUpperCase(),
-    sector: profile.sector ?? null,
-    industry: profile.industry ?? null,
-    summary: profile.longBusinessSummary ?? null,
-    website: profile.website ?? null,
-    employees: profile.fullTimeEmployees ?? null,
+    sector: profile?.sector ?? null,
+    industry: profile?.industry ?? null,
+    summary: profile?.longBusinessSummary ?? null,
+    website: profile?.website ?? null,
+    employees: profile?.fullTimeEmployees ?? null,
+    fiftyTwoWeekHigh: stats?.fiftyTwoWeekHigh ?? null,
+    fiftyTwoWeekLow: stats?.fiftyTwoWeekLow ?? null,
+    volume: stats?.volume ?? null,
+    averageVolume: stats?.averageVolume ?? null,
+    dividendYield: stats?.dividendYield ?? null,
+    nextEarningsDate: earningsDate ? earningsDate * 1000 : null,
   };
 }
 
