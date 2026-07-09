@@ -13,15 +13,15 @@ type ChartResult = {
     chartPreviousClose?: number;
     regularMarketTime: number;
   };
-  timestamp: number[];
+  timestamp?: number[] | null;
   indicators: {
-    quote: Array<{
+    quote?: Array<{
       open: (number | null)[];
       high: (number | null)[];
       low: (number | null)[];
       close: (number | null)[];
       volume: (number | null)[];
-    }>;
+    }> | null;
   };
 };
 
@@ -46,11 +46,12 @@ async function fetchChart(symbol: string, range: string, interval: string): Prom
   return result;
 }
 
-/** Daily candles over the given range, e.g. range="6mo" interval="1d". */
+/** Daily candles over the given range, e.g. range="6mo" interval="1d". Some thinly-traded symbols have no chart data for a range and come back with no timestamp/quote array at all. */
 export async function fetchHistory(symbol: string, range = '6mo', interval = '1d'): Promise<Candle[]> {
   const result = await fetchChart(symbol, range, interval);
   const { timestamp, indicators } = result;
-  const q = indicators.quote[0];
+  const q = indicators.quote?.[0];
+  if (!timestamp || !q) return [];
   const candles: Candle[] = [];
   for (let i = 0; i < timestamp.length; i++) {
     const close = q.close[i];

@@ -47,7 +47,7 @@ export function matchesSignalFilter(score: SignalScore | undefined, filter: Sign
 
 function createStyles(colors: ThemeColors) {
   return StyleSheet.create({
-    row: { marginBottom: 8 },
+    row: { flexGrow: 0, flexShrink: 0, height: 44, marginBottom: 8 },
     chip: {
       paddingHorizontal: 14,
       paddingVertical: 7,
