@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -17,6 +17,8 @@ import { addToWatchlist, getWatchlist, removeFromWatchlist } from '../db/databas
 import { fetchHistory, fetchQuote, searchSymbols, type SymbolSearchResult } from '../api/marketData';
 import { computeSignal } from '../signals/signalEngine';
 import { checkAlertsForSymbol } from '../notifications/alertEngine';
+import { useTheme } from '../theme/ThemeContext';
+import type { ThemeColors } from '../theme/theme';
 import type { Quote, Signal } from '../types';
 import { SignalBadge } from '../components/SignalBadge';
 
@@ -30,6 +32,8 @@ type Row = {
 };
 
 export function WatchlistScreen({ navigation }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -173,7 +177,7 @@ export function WatchlistScreen({ navigation }: Props) {
                   {r.name}
                 </Text>
               </View>
-              <Ionicons name="add-circle-outline" size={20} color="#0a7d32" />
+              <Ionicons name="add-circle-outline" size={20} color={colors.accent} />
             </Pressable>
           ))}
         </View>
@@ -198,7 +202,7 @@ export function WatchlistScreen({ navigation }: Props) {
                 {item.error ? (
                   <Text style={styles.error}>{item.error}</Text>
                 ) : item.quote ? (
-                  <Text style={[styles.change, { color: item.quote.change >= 0 ? '#0a7d32' : '#c0392b' }]}>
+                  <Text style={[styles.change, { color: item.quote.change >= 0 ? colors.accent : colors.danger }]}>
                     ${item.quote.price.toFixed(2)} ({item.quote.change >= 0 ? '+' : ''}
                     {item.quote.changePercent.toFixed(2)}%)
                   </Text>
@@ -214,14 +218,14 @@ export function WatchlistScreen({ navigation }: Props) {
                   handleRemove(item.symbol);
                 }}
               >
-                <Ionicons name="trash-outline" size={18} color="#c0392b" />
+                <Ionicons name="trash-outline" size={18} color={colors.danger} />
               </Pressable>
-              <Ionicons name="chevron-forward" size={18} color="#bbb" />
+              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
             </Pressable>
           )}
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Ionicons name="telescope-outline" size={28} color="#bbb" />
+              <Ionicons name="telescope-outline" size={28} color={colors.textMuted} />
               <Text style={styles.emptyText}>Search above to start tracking a stock.</Text>
             </View>
           }
@@ -231,56 +235,60 @@ export function WatchlistScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16 },
-  addRow: { flexDirection: 'row', marginBottom: 8, gap: 8 },
-  input: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  addButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#0a7d32',
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    justifyContent: 'center',
-  },
-  addButtonText: { color: '#fff', fontWeight: '600' },
-  searchResults: {
-    backgroundColor: '#f5f5f5',
-    borderRadius: 8,
-    marginBottom: 12,
-    overflow: 'hidden',
-  },
-  searchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#ddd',
-    gap: 8,
-  },
-  searchSymbol: { fontWeight: '700' },
-  searchName: { color: '#666', fontSize: 12 },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#ccc',
-    gap: 10,
-  },
-  symbol: { fontSize: 16, fontWeight: '700' },
-  change: { fontSize: 13, marginTop: 2 },
-  error: { fontSize: 13, color: '#c0392b', marginTop: 2 },
-  empty: { alignItems: 'center', marginTop: 40, gap: 8 },
-  emptyText: { color: '#888' },
-});
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    container: { flex: 1, padding: 16, backgroundColor: colors.background },
+    addRow: { flexDirection: 'row', marginBottom: 8, gap: 8 },
+    input: {
+      flex: 1,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      color: colors.text,
+      backgroundColor: colors.inputBackground,
+    },
+    addButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      backgroundColor: colors.accent,
+      borderRadius: 8,
+      paddingHorizontal: 16,
+      justifyContent: 'center',
+    },
+    addButtonText: { color: '#fff', fontWeight: '600' },
+    searchResults: {
+      backgroundColor: colors.card,
+      borderRadius: 8,
+      marginBottom: 12,
+      overflow: 'hidden',
+    },
+    searchRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+      gap: 8,
+    },
+    searchSymbol: { fontWeight: '700', color: colors.text },
+    searchName: { color: colors.textSecondary, fontSize: 12 },
+    row: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingVertical: 14,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+      gap: 10,
+    },
+    symbol: { fontSize: 16, fontWeight: '700', color: colors.text },
+    change: { fontSize: 13, marginTop: 2 },
+    error: { fontSize: 13, color: colors.danger, marginTop: 2 },
+    empty: { alignItems: 'center', marginTop: 40, gap: 8 },
+    emptyText: { color: colors.textMuted },
+  });
+}

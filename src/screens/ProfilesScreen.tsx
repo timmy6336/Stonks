@@ -1,15 +1,19 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { PortfolioStackParamList } from '../navigation/types';
 import { createProfile, deleteProfile, getActiveProfileId, getProfiles, setActiveProfileId, DEFAULT_STARTING_CASH } from '../db/database';
+import { useTheme } from '../theme/ThemeContext';
+import type { ThemeColors } from '../theme/theme';
 import type { Profile } from '../types';
 
 type Props = NativeStackScreenProps<PortfolioStackParamList, 'Profiles'>;
 
 export function ProfilesScreen({ navigation }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [activeId, setActiveId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -95,7 +99,7 @@ export function ProfilesScreen({ navigation }: Props) {
       keyExtractor={(p) => String(p.id)}
       ListHeaderComponent={
         <View style={styles.sectionHeader}>
-          <Ionicons name="albums" size={16} color="#0a7d32" />
+          <Ionicons name="albums" size={16} color={colors.accent} />
           <Text style={styles.sectionTitle}>Your saves</Text>
         </View>
       }
@@ -104,7 +108,7 @@ export function ProfilesScreen({ navigation }: Props) {
           <Ionicons
             name={item.id === activeId ? 'checkmark-circle' : 'ellipse-outline'}
             size={20}
-            color={item.id === activeId ? '#0a7d32' : '#ccc'}
+            color={item.id === activeId ? colors.accent : colors.border}
           />
           <View style={{ flex: 1 }}>
             <Text style={styles.name}>{item.name}</Text>
@@ -119,20 +123,27 @@ export function ProfilesScreen({ navigation }: Props) {
               handleDelete(item);
             }}
           >
-            <Ionicons name="trash-outline" size={18} color="#c0392b" />
+            <Ionicons name="trash-outline" size={18} color={colors.danger} />
           </Pressable>
         </Pressable>
       )}
       ListFooterComponent={
         <View style={styles.card}>
           <View style={styles.sectionHeader}>
-            <Ionicons name="add-circle" size={16} color="#0a7d32" />
+            <Ionicons name="add-circle" size={16} color={colors.accent} />
             <Text style={styles.sectionTitle}>Start a new save</Text>
           </View>
-          <TextInput style={styles.input} placeholder="Save name (e.g. Aggressive growth)" value={newName} onChangeText={setNewName} />
+          <TextInput
+            style={styles.input}
+            placeholder="Save name (e.g. Aggressive growth)"
+            placeholderTextColor={colors.textMuted}
+            value={newName}
+            onChangeText={setNewName}
+          />
           <TextInput
             style={styles.input}
             placeholder="Starting cash"
+            placeholderTextColor={colors.textMuted}
             keyboardType="numeric"
             value={newStartingCash}
             onChangeText={setNewStartingCash}
@@ -155,33 +166,43 @@ export function ProfilesScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
-  sectionTitle: { fontSize: 16, fontWeight: '700' },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#ccc',
-  },
-  name: { fontWeight: '700', fontSize: 15 },
-  sub: { color: '#666', fontSize: 12, marginTop: 2 },
-  card: { backgroundColor: '#f5f5f5', borderRadius: 12, padding: 16, marginTop: 20 },
-  input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 10, marginBottom: 10, backgroundColor: '#fff' },
-  createButton: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: '#0a7d32',
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  createButtonText: { color: '#fff', fontWeight: '700' },
-  error: { color: '#c0392b', marginBottom: 8 },
-  hint: { color: '#888', fontSize: 12, marginTop: 10, textAlign: 'center' },
-});
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.background },
+    centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
+    sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
+    sectionTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      paddingVertical: 12,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+    },
+    name: { fontWeight: '700', fontSize: 15, color: colors.text },
+    sub: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
+    card: { backgroundColor: colors.card, borderRadius: 12, padding: 16, marginTop: 20 },
+    input: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 8,
+      padding: 10,
+      marginBottom: 10,
+      backgroundColor: colors.inputBackground,
+      color: colors.text,
+    },
+    createButton: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      gap: 6,
+      backgroundColor: colors.accent,
+      borderRadius: 8,
+      paddingVertical: 12,
+      alignItems: 'center',
+    },
+    createButtonText: { color: '#fff', fontWeight: '700' },
+    error: { color: colors.danger, marginBottom: 8 },
+    hint: { color: colors.textMuted, fontSize: 12, marginTop: 10, textAlign: 'center' },
+  });
+}

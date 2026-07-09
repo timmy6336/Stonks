@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   Dimensions,
   ActivityIndicator,
@@ -24,6 +24,8 @@ import { generateInsight, hasGeminiApiKey } from '../llm/llmClient';
 import { checkAlertsForSymbol, requestNotificationPermission } from '../notifications/alertEngine';
 import { executeTrade, getActiveTradingMode } from '../trading/tradingService';
 import { createAlert, getPosition } from '../db/database';
+import { useTheme } from '../theme/ThemeContext';
+import { hexToRgba, type ThemeColors } from '../theme/theme';
 import type { AlertType, Candle, CompanyProfile, Position, Quote, Signal, TradingMode } from '../types';
 import { SignalBadge } from '../components/SignalBadge';
 import type { TradeSide } from '../types';
@@ -33,15 +35,18 @@ type Props = {
 };
 
 function CardTitle({ icon, children }: { icon: keyof typeof Ionicons.glyphMap; children: string }) {
+  const { colors } = useTheme();
   return (
-    <View style={styles.cardTitleRow}>
-      <Ionicons name={icon} size={16} color="#0a7d32" />
-      <Text style={styles.cardTitle}>{children}</Text>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+      <Ionicons name={icon} size={16} color={colors.accent} />
+      <Text style={{ fontWeight: '700', color: colors.text }}>{children}</Text>
     </View>
   );
 }
 
 export function StockDetailScreen({ route }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const { symbol } = route.params;
   const [quote, setQuote] = useState<Quote | null>(null);
   const [candles, setCandles] = useState<Candle[]>([]);
@@ -225,7 +230,7 @@ export function StockDetailScreen({ route }: Props) {
         <View>
           <Text style={styles.symbol}>{symbol}</Text>
           <Text style={styles.price}>${quote.price.toFixed(2)}</Text>
-          <Text style={{ color: quote.change >= 0 ? '#0a7d32' : '#c0392b' }}>
+          <Text style={{ color: quote.change >= 0 ? colors.accent : colors.danger }}>
             {quote.change >= 0 ? '+' : ''}
             {quote.change.toFixed(2)} ({quote.changePercent.toFixed(2)}%)
           </Text>
@@ -243,10 +248,10 @@ export function StockDetailScreen({ route }: Props) {
           withHorizontalLabels
           withVerticalLabels={false}
           chartConfig={{
-            backgroundGradientFrom: '#fff',
-            backgroundGradientTo: '#fff',
-            color: (opacity = 1) => `rgba(10, 125, 50, ${opacity})`,
-            labelColor: () => '#333',
+            backgroundGradientFrom: colors.card,
+            backgroundGradientTo: colors.card,
+            color: (opacity = 1) => hexToRgba(colors.accent, opacity),
+            labelColor: () => colors.text,
             decimalPlaces: 2,
           }}
           bezier
@@ -277,12 +282,12 @@ export function StockDetailScreen({ route }: Props) {
           <CardTitle icon="flask">Backtest: does the signal actually help?</CardTitle>
           <Text style={styles.reason}>
             Following this signal from {backtest.startDate} to {backtest.endDate} would have returned{' '}
-            <Text style={{ fontWeight: '700', color: backtest.strategyReturnPercent >= 0 ? '#0a7d32' : '#c0392b' }}>
+            <Text style={{ fontWeight: '700', color: backtest.strategyReturnPercent >= 0 ? colors.accent : colors.danger }}>
               {backtest.strategyReturnPercent >= 0 ? '+' : ''}
               {backtest.strategyReturnPercent.toFixed(1)}%
             </Text>
             , versus simply buying and holding at{' '}
-            <Text style={{ fontWeight: '700', color: backtest.buyHoldReturnPercent >= 0 ? '#0a7d32' : '#c0392b' }}>
+            <Text style={{ fontWeight: '700', color: backtest.buyHoldReturnPercent >= 0 ? colors.accent : colors.danger }}>
               {backtest.buyHoldReturnPercent >= 0 ? '+' : ''}
               {backtest.buyHoldReturnPercent.toFixed(1)}%
             </Text>
@@ -308,7 +313,7 @@ export function StockDetailScreen({ route }: Props) {
           {profile.summary && <Text style={styles.reason}>{profile.summary}</Text>}
           {profile.website && (
             <Pressable style={styles.linkRow} onPress={() => Linking.openURL(profile.website!)}>
-              <Ionicons name="globe-outline" size={14} color="#0a7d32" />
+              <Ionicons name="globe-outline" size={14} color={colors.accent} />
               <Text style={styles.link}>{profile.website}</Text>
             </Pressable>
           )}
@@ -356,15 +361,17 @@ export function StockDetailScreen({ route }: Props) {
       {position && (
         <View style={styles.card}>
           <CardTitle icon="briefcase">Your position</CardTitle>
-          <Text>{position.quantity} shares @ avg ${position.avgCost.toFixed(2)}</Text>
-          <Text style={{ color: quote.price >= position.avgCost ? '#0a7d32' : '#c0392b' }}>
+          <Text style={{ color: colors.text }}>
+            {position.quantity} shares @ avg ${position.avgCost.toFixed(2)}
+          </Text>
+          <Text style={{ color: quote.price >= position.avgCost ? colors.accent : colors.danger }}>
             Unrealized P&L: ${((quote.price - position.avgCost) * position.quantity).toFixed(2)}
           </Text>
         </View>
       )}
 
       <View style={styles.modeRow}>
-        <Ionicons name={mode === 'LIVE' ? 'flash' : 'flask-outline'} size={14} color="#666" />
+        <Ionicons name={mode === 'LIVE' ? 'flash' : 'flask-outline'} size={14} color={colors.textSecondary} />
         <Text style={styles.modeLabel}>Mode: {mode === 'LIVE' ? 'LIVE (real money)' : 'Paper (simulated)'}</Text>
       </View>
 
@@ -380,7 +387,7 @@ export function StockDetailScreen({ route }: Props) {
       </View>
 
       <Pressable style={styles.alertButton} onPress={openAlertModal}>
-        <Ionicons name="notifications-outline" size={16} color="#0a7d32" />
+        <Ionicons name="notifications-outline" size={16} color={colors.accent} />
         <Text style={styles.alertButtonText}>Set alert</Text>
       </Pressable>
 
@@ -400,7 +407,7 @@ export function StockDetailScreen({ route }: Props) {
                 <Ionicons
                   name={alertType === type ? 'radio-button-on' : 'radio-button-off'}
                   size={18}
-                  color={alertType === type ? '#0a7d32' : '#999'}
+                  color={alertType === type ? colors.accent : colors.textMuted}
                 />
                 <Text style={styles.alertTypeLabel}>{label}</Text>
               </Pressable>
@@ -412,16 +419,19 @@ export function StockDetailScreen({ route }: Props) {
                 value={alertThreshold}
                 onChangeText={setAlertThreshold}
                 placeholder="Price"
+                placeholderTextColor={colors.textMuted}
               />
             )}
             {alertError && <Text style={styles.error}>{alertError}</Text>}
             {alertSaved ? (
-              <Text style={[styles.reason, { color: '#0a7d32' }]}>Alert saved. You can manage it from the bell icon on Watchlist.</Text>
+              <Text style={[styles.reason, { color: colors.accent }]}>
+                Alert saved. You can manage it from the bell icon on Watchlist.
+              </Text>
             ) : null}
             <View style={styles.actionRow}>
               <Pressable style={styles.actionButton} onPress={() => setShowAlertModal(false)}>
-                <Ionicons name="close-circle-outline" size={18} color="#333" />
-                <Text>{alertSaved ? 'Close' : 'Cancel'}</Text>
+                <Ionicons name="close-circle-outline" size={18} color={colors.text} />
+                <Text style={{ color: colors.text }}>{alertSaved ? 'Close' : 'Cancel'}</Text>
               </Pressable>
               {!alertSaved && (
                 <Pressable style={[styles.actionButton, styles.buy]} onPress={handleCreateAlert}>
@@ -440,19 +450,20 @@ export function StockDetailScreen({ route }: Props) {
             <Text style={styles.cardTitle}>
               {tradeSide} {symbol} {mode === 'LIVE' ? '(real order)' : '(simulated)'}
             </Text>
-            <Text style={{ marginBottom: 8 }}>Price: ${quote.price.toFixed(2)}</Text>
+            <Text style={{ marginBottom: 8, color: colors.text }}>Price: ${quote.price.toFixed(2)}</Text>
             <TextInput
               style={styles.input}
               keyboardType="numeric"
               value={quantity}
               onChangeText={setQuantity}
               placeholder="Quantity"
+              placeholderTextColor={colors.textMuted}
             />
             {tradeError && <Text style={styles.error}>{tradeError}</Text>}
             <View style={styles.actionRow}>
               <Pressable style={styles.actionButton} onPress={() => setTradeSide(null)}>
-                <Ionicons name="close-circle-outline" size={18} color="#333" />
-                <Text>Cancel</Text>
+                <Ionicons name="close-circle-outline" size={18} color={colors.text} />
+                <Text style={{ color: colors.text }}>Cancel</Text>
               </Pressable>
               <Pressable
                 style={[styles.actionButton, tradeSide === 'BUY' ? styles.buy : styles.sell]}
@@ -476,61 +487,71 @@ export function StockDetailScreen({ route }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  symbol: { fontSize: 22, fontWeight: '700' },
-  price: { fontSize: 28, fontWeight: '600', marginTop: 4 },
-  card: { backgroundColor: '#f5f5f5', borderRadius: 12, padding: 14, marginTop: 16 },
-  cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
-  cardTitle: { fontWeight: '700' },
-  reason: { marginBottom: 4, color: '#333', lineHeight: 20 },
-  profileMeta: { color: '#666', marginBottom: 8, fontWeight: '600' },
-  linkRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
-  link: { color: '#0a7d32' },
-  disclaimer: { color: '#999', fontSize: 11, marginTop: 8, fontStyle: 'italic' },
-  newsRow: { paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#ddd' },
-  newsTitle: { color: '#0a7d32', fontWeight: '600', marginBottom: 2 },
-  newsMeta: { color: '#888', fontSize: 11 },
-  aiButton: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: '#0a7d32',
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  modeRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16 },
-  modeLabel: { color: '#666', fontStyle: 'italic' },
-  actionRow: { flexDirection: 'row', gap: 12, marginTop: 12 },
-  actionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    backgroundColor: '#e0e0e0',
-  },
-  buy: { backgroundColor: '#0a7d32' },
-  sell: { backgroundColor: '#c0392b' },
-  actionText: { color: '#fff', fontWeight: '700' },
-  alertButton: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 6,
-    alignItems: 'center',
-    marginTop: 12,
-    paddingVertical: 10,
-  },
-  alertButtonText: { color: '#0a7d32', fontWeight: '600' },
-  alertTypeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 },
-  alertTypeLabel: { color: '#333' },
-  error: { color: '#c0392b', marginBottom: 8 },
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: 24 },
-  modalCard: { backgroundColor: '#fff', borderRadius: 12, padding: 20 },
-  input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 10, marginBottom: 8 },
-});
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.background },
+    centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
+    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+    symbol: { fontSize: 22, fontWeight: '700', color: colors.text },
+    price: { fontSize: 28, fontWeight: '600', marginTop: 4, color: colors.text },
+    card: { backgroundColor: colors.card, borderRadius: 12, padding: 14, marginTop: 16 },
+    cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
+    cardTitle: { fontWeight: '700', color: colors.text },
+    reason: { marginBottom: 4, color: colors.text, lineHeight: 20 },
+    profileMeta: { color: colors.textSecondary, marginBottom: 8, fontWeight: '600' },
+    linkRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
+    link: { color: colors.accent },
+    disclaimer: { color: colors.textMuted, fontSize: 11, marginTop: 8, fontStyle: 'italic' },
+    newsRow: { paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+    newsTitle: { color: colors.accent, fontWeight: '600', marginBottom: 2 },
+    newsMeta: { color: colors.textMuted, fontSize: 11 },
+    aiButton: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      gap: 6,
+      backgroundColor: colors.accent,
+      borderRadius: 8,
+      paddingVertical: 12,
+      alignItems: 'center',
+    },
+    modeRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16 },
+    modeLabel: { color: colors.textSecondary, fontStyle: 'italic' },
+    actionRow: { flexDirection: 'row', gap: 12, marginTop: 12 },
+    actionButton: {
+      flex: 1,
+      flexDirection: 'row',
+      justifyContent: 'center',
+      gap: 6,
+      paddingVertical: 12,
+      borderRadius: 8,
+      alignItems: 'center',
+      backgroundColor: colors.chipBackground,
+    },
+    buy: { backgroundColor: colors.accent },
+    sell: { backgroundColor: colors.danger },
+    actionText: { color: '#fff', fontWeight: '700' },
+    alertButton: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      gap: 6,
+      alignItems: 'center',
+      marginTop: 12,
+      paddingVertical: 10,
+    },
+    alertButtonText: { color: colors.accent, fontWeight: '600' },
+    alertTypeRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 },
+    alertTypeLabel: { color: colors.text },
+    error: { color: colors.danger, marginBottom: 8 },
+    modalBackdrop: { flex: 1, backgroundColor: colors.modalBackdrop, justifyContent: 'center', padding: 24 },
+    modalCard: { backgroundColor: colors.card, borderRadius: 12, padding: 20 },
+    input: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 8,
+      padding: 10,
+      marginBottom: 8,
+      color: colors.text,
+      backgroundColor: colors.inputBackground,
+    },
+  });
+}

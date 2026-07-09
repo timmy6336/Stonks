@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SignalBadge } from './SignalBadge';
+import { useTheme } from '../theme/ThemeContext';
+import type { ThemeColors } from '../theme/theme';
 import type { TickerRowData } from '../hooks/useTickerRows';
 
 type Props = {
@@ -12,6 +14,8 @@ type Props = {
 };
 
 export function TickerRow({ row, onPress, onAddToWatchlist, showRecoveryHighlight }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const isRecoveryCandidate =
     showRecoveryHighlight && (row.signal?.score === 'BUY' || row.signal?.score === 'STRONG_BUY');
   return (
@@ -29,7 +33,7 @@ export function TickerRow({ row, onPress, onAddToWatchlist, showRecoveryHighligh
         {row.error ? (
           <Text style={styles.error}>{row.error}</Text>
         ) : row.quote ? (
-          <Text style={[styles.change, { color: row.quote.change >= 0 ? '#0a7d32' : '#c0392b' }]}>
+          <Text style={[styles.change, { color: row.quote.change >= 0 ? colors.accent : colors.danger }]}>
             ${row.quote.price.toFixed(2)} ({row.quote.change >= 0 ? '+' : ''}
             {row.quote.changePercent.toFixed(2)}%)
           </Text>
@@ -46,47 +50,49 @@ export function TickerRow({ row, onPress, onAddToWatchlist, showRecoveryHighligh
             onAddToWatchlist(row.symbol);
           }}
         >
-          <Ionicons name="bookmark-outline" size={14} color="#333" />
+          <Ionicons name="bookmark-outline" size={14} color={colors.text} />
           <Text style={styles.addButtonText}>Watch</Text>
         </Pressable>
       )}
-      <Ionicons name="chevron-forward" size={18} color="#bbb" />
+      <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
     </Pressable>
   );
 }
 
-const styles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#ccc',
-    gap: 10,
-  },
-  symbolRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
-  symbol: { fontSize: 16, fontWeight: '700' },
-  recoveryBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    backgroundColor: '#c98a12',
-    borderRadius: 8,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  recoveryBadgeText: { color: '#fff', fontSize: 9, fontWeight: '700' },
-  change: { fontSize: 13, marginTop: 2 },
-  error: { fontSize: 13, color: '#c0392b', marginTop: 2 },
-  addButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: '#eee',
-  },
-  addButtonText: { color: '#333', fontSize: 12, fontWeight: '600' },
-});
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    row: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingVertical: 14,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+      gap: 10,
+    },
+    symbolRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
+    symbol: { fontSize: 16, fontWeight: '700', color: colors.text },
+    recoveryBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 3,
+      backgroundColor: '#c98a12',
+      borderRadius: 8,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+    },
+    recoveryBadgeText: { color: '#fff', fontSize: 9, fontWeight: '700' },
+    change: { fontSize: 13, marginTop: 2 },
+    error: { fontSize: 13, color: colors.danger, marginTop: 2 },
+    addButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 8,
+      backgroundColor: colors.chipBackground,
+    },
+    addButtonText: { color: colors.text, fontSize: 12, fontWeight: '600' },
+  });
+}

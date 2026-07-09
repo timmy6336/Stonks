@@ -1,6 +1,6 @@
 import React from 'react';
 import { Pressable } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+import { DarkTheme, DefaultTheme, NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,6 +11,7 @@ import { AlertsScreen } from '../screens/AlertsScreen';
 import { PortfolioScreen } from '../screens/PortfolioScreen';
 import { ProfilesScreen } from '../screens/ProfilesScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
+import { useTheme } from '../theme/ThemeContext';
 import type { PortfolioStackParamList, RootTabParamList, TrendingStackParamList, WatchlistStackParamList } from './types';
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
@@ -19,6 +20,7 @@ const TrendingStack = createNativeStackNavigator<TrendingStackParamList>();
 const PortfolioStack = createNativeStackNavigator<PortfolioStackParamList>();
 
 function WatchlistStackScreen() {
+  const { colors } = useTheme();
   return (
     <WatchlistStack.Navigator>
       <WatchlistStack.Screen
@@ -28,7 +30,7 @@ function WatchlistStackScreen() {
           title: 'Watchlist',
           headerRight: () => (
             <Pressable onPress={() => navigation.navigate('Alerts')} hitSlop={8} style={{ marginRight: 4 }}>
-              <Ionicons name="notifications-outline" size={22} color="#0a7d32" />
+              <Ionicons name="notifications-outline" size={22} color={colors.accent} />
             </Pressable>
           ),
         })}
@@ -73,13 +75,27 @@ const TAB_ICONS: Record<keyof RootTabParamList, keyof typeof Ionicons.glyphMap> 
 };
 
 export function RootNavigator() {
+  const { colors, scheme } = useTheme();
+  const navTheme = {
+    ...(scheme === 'dark' ? DarkTheme : DefaultTheme),
+    colors: {
+      ...(scheme === 'dark' ? DarkTheme.colors : DefaultTheme.colors),
+      primary: colors.accent,
+      background: colors.background,
+      card: colors.card,
+      text: colors.text,
+      border: colors.border,
+    },
+  };
+
   return (
-    <NavigationContainer>
+    <NavigationContainer theme={navTheme}>
       <Tab.Navigator
         screenOptions={({ route }) => ({
           headerShown: false,
-          tabBarActiveTintColor: '#0a7d32',
-          tabBarInactiveTintColor: '#8a8a8a',
+          tabBarActiveTintColor: colors.accent,
+          tabBarInactiveTintColor: colors.textMuted,
+          tabBarStyle: { backgroundColor: colors.card, borderTopColor: colors.border },
           tabBarIcon: ({ color, size }) => <Ionicons name={TAB_ICONS[route.name]} color={color} size={size} />,
         })}
       >

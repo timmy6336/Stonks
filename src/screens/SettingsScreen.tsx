@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -11,8 +11,12 @@ import {
   setLiveTradingEnabled,
 } from '../alpaca/alpacaClient';
 import { clearGeminiApiKey, hasGeminiApiKey, saveGeminiApiKey } from '../llm/llmClient';
+import { useTheme } from '../theme/ThemeContext';
+import type { ThemeColors } from '../theme/theme';
 
 export function SettingsScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [keyId, setKeyId] = useState('');
   const [secretKey, setSecretKey] = useState('');
   const [hasCredentials, setHasCredentials] = useState(false);
@@ -117,7 +121,7 @@ export function SettingsScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: 16 }}>
       <View style={styles.sectionHeader}>
-        <Ionicons name="key" size={16} color="#0a7d32" />
+        <Ionicons name="key" size={16} color={colors.accent} />
         <Text style={styles.sectionTitle}>Alpaca API credentials</Text>
       </View>
       <Text style={styles.helpText}>
@@ -127,6 +131,7 @@ export function SettingsScreen() {
       <TextInput
         style={styles.input}
         placeholder="API Key ID"
+        placeholderTextColor={colors.textMuted}
         autoCapitalize="none"
         value={keyId}
         onChangeText={setKeyId}
@@ -134,6 +139,7 @@ export function SettingsScreen() {
       <TextInput
         style={styles.input}
         placeholder="API Secret Key"
+        placeholderTextColor={colors.textMuted}
         autoCapitalize="none"
         secureTextEntry
         value={secretKey}
@@ -154,7 +160,7 @@ export function SettingsScreen() {
         <Ionicons
           name={hasCredentials ? 'checkmark-circle' : 'alert-circle-outline'}
           size={14}
-          color={hasCredentials ? '#0a7d32' : '#888'}
+          color={hasCredentials ? colors.accent : colors.textMuted}
         />
         <Text style={styles.credentialStatus}>
           {hasCredentials ? 'Alpaca credentials are saved on this device.' : 'No Alpaca credentials saved yet.'}
@@ -163,7 +169,7 @@ export function SettingsScreen() {
 
       {hasCredentials && (
         <Pressable style={styles.clearLinkRow} onPress={handleClear}>
-          <Ionicons name="trash-outline" size={14} color="#c0392b" />
+          <Ionicons name="trash-outline" size={14} color={colors.danger} />
           <Text style={styles.clearLink}>Remove saved credentials</Text>
         </Pressable>
       )}
@@ -173,7 +179,7 @@ export function SettingsScreen() {
       <View style={styles.liveRow}>
         <View style={{ flex: 1 }}>
           <View style={styles.sectionHeader}>
-            <Ionicons name="flash" size={16} color="#0a7d32" />
+            <Ionicons name="flash" size={16} color={colors.accent} />
             <Text style={styles.sectionTitle}>Live trading (real money)</Text>
           </View>
           <Text style={styles.helpText}>
@@ -187,7 +193,7 @@ export function SettingsScreen() {
       <View style={styles.divider} />
 
       <View style={styles.sectionHeader}>
-        <Ionicons name="sparkles" size={16} color="#0a7d32" />
+        <Ionicons name="sparkles" size={16} color={colors.accent} />
         <Text style={styles.sectionTitle}>AI insights (optional)</Text>
       </View>
       <Text style={styles.helpText}>
@@ -197,6 +203,7 @@ export function SettingsScreen() {
       <TextInput
         style={styles.input}
         placeholder="Gemini API key"
+        placeholderTextColor={colors.textMuted}
         autoCapitalize="none"
         secureTextEntry
         value={geminiKeyInput}
@@ -216,7 +223,7 @@ export function SettingsScreen() {
         <Ionicons
           name={hasGeminiKey ? 'checkmark-circle' : 'alert-circle-outline'}
           size={14}
-          color={hasGeminiKey ? '#0a7d32' : '#888'}
+          color={hasGeminiKey ? colors.accent : colors.textMuted}
         />
         <Text style={styles.credentialStatus}>
           {hasGeminiKey ? 'Gemini API key is saved on this device.' : 'No Gemini API key saved yet.'}
@@ -224,14 +231,14 @@ export function SettingsScreen() {
       </View>
       {hasGeminiKey && (
         <Pressable style={styles.clearLinkRow} onPress={handleClearGemini}>
-          <Ionicons name="trash-outline" size={14} color="#c0392b" />
+          <Ionicons name="trash-outline" size={14} color={colors.danger} />
           <Text style={styles.clearLink}>Remove saved key</Text>
         </Pressable>
       )}
 
       {statusMessage && (
         <View style={styles.statusRow}>
-          <Ionicons name="checkmark-circle" size={14} color="#0a7d32" />
+          <Ionicons name="checkmark-circle" size={14} color={colors.accent} />
           <Text style={styles.status}>{statusMessage}</Text>
         </View>
       )}
@@ -239,28 +246,38 @@ export function SettingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
-  sectionTitle: { fontSize: 16, fontWeight: '700' },
-  helpText: { color: '#666', marginBottom: 12, lineHeight: 18 },
-  input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 10, marginBottom: 10 },
-  saveButton: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: '#0a7d32',
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  saveButtonText: { color: '#fff', fontWeight: '700' },
-  credentialStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12 },
-  credentialStatus: { color: '#333' },
-  clearLinkRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
-  clearLink: { color: '#c0392b' },
-  divider: { height: 1, backgroundColor: '#eee', marginVertical: 24 },
-  liveRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16 },
-  status: { color: '#0a7d32' },
-});
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.background },
+    sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
+    sectionTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
+    helpText: { color: colors.textSecondary, marginBottom: 12, lineHeight: 18 },
+    input: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 8,
+      padding: 10,
+      marginBottom: 10,
+      backgroundColor: colors.inputBackground,
+      color: colors.text,
+    },
+    saveButton: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      gap: 6,
+      backgroundColor: colors.accent,
+      borderRadius: 8,
+      paddingVertical: 12,
+      alignItems: 'center',
+    },
+    saveButtonText: { color: '#fff', fontWeight: '700' },
+    credentialStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12 },
+    credentialStatus: { color: colors.text },
+    clearLinkRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
+    clearLink: { color: colors.danger },
+    divider: { height: 1, backgroundColor: colors.border, marginVertical: 24 },
+    liveRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    statusRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16 },
+    status: { color: colors.accent },
+  });
+}

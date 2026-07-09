@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -9,10 +9,14 @@ import { addToWatchlist } from '../db/database';
 import { useTickerRows } from '../hooks/useTickerRows';
 import { TickerRow } from '../components/TickerRow';
 import { STOCK_CATEGORIES } from '../data/categories';
+import { useTheme } from '../theme/ThemeContext';
+import type { ThemeColors } from '../theme/theme';
 
 type Props = NativeStackScreenProps<TrendingStackParamList, 'Trending'>;
 
 export function TrendingScreen({ navigation }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [trendingSymbols, setTrendingSymbols] = useState<string[]>([]);
   const [trendingError, setTrendingError] = useState<string | null>(null);
   const [trendingLoading, setTrendingLoading] = useState(true);
@@ -83,7 +87,7 @@ export function TrendingScreen({ navigation }: Props) {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
     >
       <View style={styles.sectionHeader}>
-        <Ionicons name="flame" size={18} color="#0a7d32" />
+        <Ionicons name="flame" size={18} color={colors.accent} />
         <Text style={styles.sectionTitle}>Trending now</Text>
       </View>
       {trendingError && <Text style={styles.error}>{trendingError}</Text>}
@@ -96,7 +100,7 @@ export function TrendingScreen({ navigation }: Props) {
       )}
 
       <View style={styles.sectionHeader}>
-        <Ionicons name="pricetag" size={18} color="#d9822b" />
+        <Ionicons name="pricetag" size={18} color={colors.warning} />
         <Text style={styles.sectionTitle}>On sale</Text>
       </View>
       <Text style={styles.categoryHint}>
@@ -119,7 +123,7 @@ export function TrendingScreen({ navigation }: Props) {
       )}
 
       <View style={styles.sectionHeader}>
-        <Ionicons name="grid" size={18} color="#0a7d32" />
+        <Ionicons name="grid" size={18} color={colors.accent} />
         <Text style={styles.sectionTitle}>Browse by category</Text>
       </View>
       <Text style={styles.categoryHint}>Curated groupings for browsing, not an official sector classification.</Text>
@@ -130,7 +134,7 @@ export function TrendingScreen({ navigation }: Props) {
             style={[styles.chip, c.id === selectedCategoryId && styles.chipSelected]}
             onPress={() => setSelectedCategoryId(c.id)}
           >
-            <Ionicons name={c.icon} size={14} color={c.id === selectedCategoryId ? '#fff' : '#333'} />
+            <Ionicons name={c.icon} size={14} color={c.id === selectedCategoryId ? '#fff' : colors.text} />
             <Text style={[styles.chipText, c.id === selectedCategoryId && styles.chipTextSelected]}>{c.name}</Text>
           </Pressable>
         ))}
@@ -145,25 +149,27 @@ export function TrendingScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16, marginBottom: 4 },
-  sectionTitle: { fontSize: 16, fontWeight: '700' },
-  categoryHint: { color: '#888', fontSize: 12, marginBottom: 10 },
-  chipRow: { marginBottom: 4 },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 16,
-    backgroundColor: '#eee',
-    marginRight: 8,
-  },
-  chipSelected: { backgroundColor: '#0a7d32' },
-  chipText: { color: '#333', fontWeight: '600', fontSize: 13 },
-  chipTextSelected: { color: '#fff' },
-  error: { color: '#c0392b', marginBottom: 8 },
-  addedNote: { color: '#0a7d32', textAlign: 'center', marginTop: 12 },
-});
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.background },
+    sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16, marginBottom: 4 },
+    sectionTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
+    categoryHint: { color: colors.textMuted, fontSize: 12, marginBottom: 10 },
+    chipRow: { marginBottom: 4 },
+    chip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+      borderRadius: 16,
+      backgroundColor: colors.chipBackground,
+      marginRight: 8,
+    },
+    chipSelected: { backgroundColor: colors.accent },
+    chipText: { color: colors.text, fontWeight: '600', fontSize: 13 },
+    chipTextSelected: { color: '#fff' },
+    error: { color: colors.danger, marginBottom: 8 },
+    addedNote: { color: colors.accent, textAlign: 'center', marginTop: 12 },
+  });
+}

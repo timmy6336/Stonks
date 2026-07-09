@@ -1,8 +1,10 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert as RNAlert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { deleteAlert, getAlerts, resetAlert } from '../db/database';
+import { useTheme } from '../theme/ThemeContext';
+import type { ThemeColors } from '../theme/theme';
 import type { Alert, AlertType } from '../types';
 
 const ALERT_TYPE_LABELS: Record<AlertType, string> = {
@@ -18,6 +20,8 @@ function describeAlert(alert: Alert): string {
 }
 
 export function AlertsScreen() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -77,17 +81,17 @@ export function AlertsScreen() {
           </View>
           {item.triggeredAt && (
             <Pressable hitSlop={8} onPress={() => handleReset(item)}>
-              <Ionicons name="refresh-circle-outline" size={22} color="#0a7d32" />
+              <Ionicons name="refresh-circle-outline" size={22} color={colors.accent} />
             </Pressable>
           )}
           <Pressable hitSlop={8} onPress={() => handleDelete(item)}>
-            <Ionicons name="trash-outline" size={20} color="#c0392b" />
+            <Ionicons name="trash-outline" size={20} color={colors.danger} />
           </Pressable>
         </View>
       )}
       ListEmptyComponent={
         <View style={styles.empty}>
-          <Ionicons name="notifications-outline" size={28} color="#bbb" />
+          <Ionicons name="notifications-outline" size={28} color={colors.textMuted} />
           <Text style={styles.emptyText}>
             No alerts yet. Open a stock's detail page and tap "Set alert" to create one.
           </Text>
@@ -105,21 +109,23 @@ export function AlertsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#ccc',
-  },
-  symbol: { fontWeight: '700', fontSize: 15 },
-  description: { color: '#666', fontSize: 13, marginTop: 2 },
-  triggered: { color: '#0a7d32', fontSize: 11, marginTop: 2 },
-  empty: { alignItems: 'center', marginTop: 40, gap: 8, paddingHorizontal: 24 },
-  emptyText: { color: '#888', textAlign: 'center' },
-  hint: { color: '#999', fontSize: 11, textAlign: 'center', marginTop: 16, paddingHorizontal: 8 },
-});
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.background },
+    centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      paddingVertical: 12,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+    },
+    symbol: { fontWeight: '700', fontSize: 15, color: colors.text },
+    description: { color: colors.textSecondary, fontSize: 13, marginTop: 2 },
+    triggered: { color: colors.accent, fontSize: 11, marginTop: 2 },
+    empty: { alignItems: 'center', marginTop: 40, gap: 8, paddingHorizontal: 24 },
+    emptyText: { color: colors.textMuted, textAlign: 'center' },
+    hint: { color: colors.textMuted, fontSize: 11, textAlign: 'center', marginTop: 16, paddingHorizontal: 8 },
+  });
+}

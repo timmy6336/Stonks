@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Dimensions, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LineChart } from 'react-native-chart-kit';
@@ -9,6 +9,8 @@ import { getActiveProfile, getPositions, getTrades, resetPaperAccount } from '..
 import { fetchQuote } from '../api/marketData';
 import { computePortfolioPerformance, type PortfolioPerformance } from '../portfolio/portfolioHistory';
 import { STOCK_CATEGORIES } from '../data/categories';
+import { useTheme } from '../theme/ThemeContext';
+import { hexToRgba, type ThemeColors } from '../theme/theme';
 import type { Position, Profile, Trade } from '../types';
 
 const CATEGORY_COLORS = ['#0a7d32', '#3fa34d', '#7cb342', '#d9822b', '#c0392b', '#8e44ad', '#2980b9', '#16a085', '#999'];
@@ -34,6 +36,8 @@ type PositionRow = Position & { currentPrice?: number };
 type Props = NativeStackScreenProps<PortfolioStackParamList, 'Portfolio'>;
 
 export function PortfolioScreen({ navigation }: Props) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [positions, setPositions] = useState<PositionRow[]>([]);
   const [trades, setTrades] = useState<Trade[]>([]);
@@ -140,12 +144,12 @@ export function PortfolioScreen({ navigation }: Props) {
         <>
           <Pressable style={styles.saveRow} onPress={() => navigation.navigate('Profiles')}>
             <View style={styles.saveLabelRow}>
-              <Ionicons name="albums" size={16} color="#333" />
+              <Ionicons name="albums" size={16} color={colors.text} />
               <Text style={styles.saveLabel}>Save: {profile?.name ?? ''}</Text>
             </View>
             <View style={styles.saveLabelRow}>
               <Text style={styles.saveManage}>Manage saves</Text>
-              <Ionicons name="chevron-forward" size={16} color="#0a7d32" />
+              <Ionicons name="chevron-forward" size={16} color={colors.accent} />
             </View>
           </Pressable>
           <View style={styles.summaryCard}>
@@ -155,7 +159,7 @@ export function PortfolioScreen({ navigation }: Props) {
           </View>
 
           <View style={styles.sectionHeader}>
-            <Ionicons name="stats-chart" size={16} color="#0a7d32" />
+            <Ionicons name="stats-chart" size={16} color={colors.accent} />
             <Text style={styles.sectionTitle}>Performance</Text>
           </View>
           {performanceLoading && !performance ? (
@@ -180,10 +184,10 @@ export function PortfolioScreen({ navigation }: Props) {
                 withHorizontalLabels
                 withVerticalLabels={false}
                 chartConfig={{
-                  backgroundGradientFrom: '#fff',
-                  backgroundGradientTo: '#fff',
-                  color: (opacity = 1) => `rgba(10, 125, 50, ${opacity})`,
-                  labelColor: () => '#333',
+                  backgroundGradientFrom: colors.card,
+                  backgroundGradientTo: colors.card,
+                  color: (opacity = 1) => hexToRgba(colors.accent, opacity),
+                  labelColor: () => colors.text,
                   decimalPlaces: 0,
                 }}
                 bezier
@@ -197,9 +201,9 @@ export function PortfolioScreen({ navigation }: Props) {
                       <Ionicons
                         name={p.changePercent >= 0 ? 'caret-up' : 'caret-down'}
                         size={14}
-                        color={p.changePercent >= 0 ? '#0a7d32' : '#c0392b'}
+                        color={p.changePercent >= 0 ? colors.accent : colors.danger}
                       />
-                      <Text style={[styles.periodPercent, { color: p.changePercent >= 0 ? '#0a7d32' : '#c0392b' }]}>
+                      <Text style={[styles.periodPercent, { color: p.changePercent >= 0 ? colors.accent : colors.danger }]}>
                         {p.changePercent >= 0 ? '+' : ''}
                         {p.changePercent.toFixed(2)}%
                       </Text>
@@ -221,7 +225,7 @@ export function PortfolioScreen({ navigation }: Props) {
           {categoryBreakdown.length > 0 && (
             <>
               <View style={styles.sectionHeader}>
-                <Ionicons name="apps" size={16} color="#0a7d32" />
+                <Ionicons name="apps" size={16} color={colors.accent} />
                 <Text style={styles.sectionTitle}>Diversification</Text>
               </View>
               <View style={styles.diversificationCard}>
@@ -237,7 +241,7 @@ export function PortfolioScreen({ navigation }: Props) {
           )}
 
           <View style={styles.sectionHeader}>
-            <Ionicons name="pie-chart" size={16} color="#0a7d32" />
+            <Ionicons name="pie-chart" size={16} color={colors.accent} />
             <Text style={styles.sectionTitle}>Positions</Text>
           </View>
         </>
@@ -251,7 +255,7 @@ export function PortfolioScreen({ navigation }: Props) {
               <Text style={styles.sub}>{item.quantity} shares @ avg ${item.avgCost.toFixed(2)}</Text>
             </View>
             {pl !== undefined && (
-              <Text style={{ color: pl >= 0 ? '#0a7d32' : '#c0392b', fontWeight: '600' }}>
+              <Text style={{ color: pl >= 0 ? colors.accent : colors.danger, fontWeight: '600' }}>
                 {pl >= 0 ? '+' : ''}${pl.toFixed(2)}
               </Text>
             )}
@@ -260,14 +264,14 @@ export function PortfolioScreen({ navigation }: Props) {
       }}
       ListEmptyComponent={
         <View style={styles.empty}>
-          <Ionicons name="file-tray-outline" size={24} color="#bbb" />
+          <Ionicons name="file-tray-outline" size={24} color={colors.textMuted} />
           <Text style={styles.emptyText}>No open paper positions yet.</Text>
         </View>
       }
       ListFooterComponent={
         <>
           <View style={styles.sectionHeader}>
-            <Ionicons name="receipt" size={16} color="#0a7d32" />
+            <Ionicons name="receipt" size={16} color={colors.accent} />
             <Text style={styles.sectionTitle}>Recent trades</Text>
           </View>
           {trades.slice(0, 20).map((t) => (
@@ -276,9 +280,9 @@ export function PortfolioScreen({ navigation }: Props) {
                 <Ionicons
                   name={t.side === 'BUY' ? 'arrow-up-circle' : 'arrow-down-circle'}
                   size={16}
-                  color={t.side === 'BUY' ? '#0a7d32' : '#c0392b'}
+                  color={t.side === 'BUY' ? colors.accent : colors.danger}
                 />
-                <Text>
+                <Text style={{ color: colors.text }}>
                   {t.side} {t.quantity} {t.symbol} @ ${t.price.toFixed(2)}
                 </Text>
               </View>
@@ -286,7 +290,7 @@ export function PortfolioScreen({ navigation }: Props) {
             </View>
           ))}
           <Pressable style={styles.resetButton} onPress={handleReset}>
-            <Ionicons name="refresh" size={16} color="#c0392b" />
+            <Ionicons name="refresh" size={16} color={colors.danger} />
             <Text style={styles.resetText}>Reset this save</Text>
           </Pressable>
         </>
@@ -295,44 +299,46 @@ export function PortfolioScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  saveRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  saveLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  saveLabel: { fontWeight: '700', fontSize: 15 },
-  saveManage: { color: '#0a7d32', fontWeight: '600' },
-  summaryCard: { backgroundColor: '#f5f5f5', borderRadius: 12, padding: 16, marginBottom: 16 },
-  summaryLabel: { color: '#666' },
-  summaryValue: { fontSize: 28, fontWeight: '700', marginTop: 4 },
-  summarySub: { marginTop: 6, color: '#666' },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8, marginBottom: 8 },
-  sectionTitle: { fontSize: 16, fontWeight: '700' },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#ccc',
-  },
-  tradeRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  symbol: { fontWeight: '700' },
-  sub: { color: '#666', fontSize: 12, marginTop: 2 },
-  periodRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
-  periodCard: { flex: 1, backgroundColor: '#f5f5f5', borderRadius: 12, padding: 10 },
-  periodLabel: { fontSize: 12, color: '#666', fontWeight: '600' },
-  periodChangeRow: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 4 },
-  periodPercent: { fontWeight: '700', fontSize: 15 },
-  periodAmount: { fontSize: 12, color: '#666', marginTop: 2 },
-  periodSub: { fontSize: 10, color: '#999', marginTop: 4 },
-  diversificationCard: { backgroundColor: '#f5f5f5', borderRadius: 12, padding: 12, marginBottom: 16 },
-  diversificationRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 5 },
-  diversificationDot: { width: 10, height: 10, borderRadius: 5 },
-  diversificationName: { flex: 1, color: '#333' },
-  diversificationPercent: { fontWeight: '700', color: '#333' },
-  empty: { alignItems: 'center', marginVertical: 12, gap: 6 },
-  emptyText: { color: '#888' },
-  resetButton: { flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: 20, paddingVertical: 12, alignItems: 'center' },
-  resetText: { color: '#c0392b', fontWeight: '600' },
-});
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.background },
+    centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
+    saveRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+    saveLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    saveLabel: { fontWeight: '700', fontSize: 15, color: colors.text },
+    saveManage: { color: colors.accent, fontWeight: '600' },
+    summaryCard: { backgroundColor: colors.card, borderRadius: 12, padding: 16, marginBottom: 16 },
+    summaryLabel: { color: colors.textSecondary },
+    summaryValue: { fontSize: 28, fontWeight: '700', marginTop: 4, color: colors.text },
+    summarySub: { marginTop: 6, color: colors.textSecondary },
+    sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8, marginBottom: 8 },
+    sectionTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
+    row: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingVertical: 10,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+    },
+    tradeRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    symbol: { fontWeight: '700', color: colors.text },
+    sub: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
+    periodRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
+    periodCard: { flex: 1, backgroundColor: colors.card, borderRadius: 12, padding: 10 },
+    periodLabel: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
+    periodChangeRow: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 4 },
+    periodPercent: { fontWeight: '700', fontSize: 15 },
+    periodAmount: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+    periodSub: { fontSize: 10, color: colors.textMuted, marginTop: 4 },
+    diversificationCard: { backgroundColor: colors.card, borderRadius: 12, padding: 12, marginBottom: 16 },
+    diversificationRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 5 },
+    diversificationDot: { width: 10, height: 10, borderRadius: 5 },
+    diversificationName: { flex: 1, color: colors.text },
+    diversificationPercent: { fontWeight: '700', color: colors.text },
+    empty: { alignItems: 'center', marginVertical: 12, gap: 6 },
+    emptyText: { color: colors.textMuted },
+    resetButton: { flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: 20, paddingVertical: 12, alignItems: 'center' },
+    resetText: { color: colors.danger, fontWeight: '600' },
+  });
+}
