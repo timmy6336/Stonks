@@ -1,8 +1,9 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
   Pressable,
+  RefreshControl,
   StyleSheet,
   Text,
   TextInput,
@@ -13,7 +14,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { WatchlistStackParamList } from '../navigation/types';
 import { addToWatchlist, getWatchlist, removeFromWatchlist } from '../db/database';
-import { fetchHistory, fetchQuote } from '../api/marketData';
+import { fetchHistory, fetchQuote, searchSymbols, type SymbolSearchResult } from '../api/marketData';
 import { computeSignal } from '../signals/signalEngine';
 import type { Quote, Signal } from '../types';
 import { SignalBadge } from '../components/SignalBadge';
@@ -30,8 +31,11 @@ type Row = {
 export function WatchlistScreen({ navigation }: Props) {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [newSymbol, setNewSymbol] = useState('');
   const [adding, setAdding] = useState(false);
+  const [searchResults, setSearchResults] = useState<SymbolSearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -41,7 +45,7 @@ export function WatchlistScreen({ navigation }: Props) {
     setLoading(false);
 
     await Promise.all(
-      items.map(async (item, index) => {
+      items.map(async (item) => {
         try {
           const [quote, history] = await Promise.all([
             fetchQuote(item.symbol),
@@ -72,6 +76,45 @@ export function WatchlistScreen({ navigation }: Props) {
     }, [load])
   );
 
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  };
+
+  // Debounced company-name/ticker search so users don't need to know the exact symbol.
+  useEffect(() => {
+    const query = newSymbol.trim();
+    if (query.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    setSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const results = await searchSymbols(query);
+        setSearchResults(results);
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [newSymbol]);
+
+  const handleAddSymbol = async (symbol: string) => {
+    setAdding(true);
+    try {
+      await addToWatchlist(symbol);
+      setNewSymbol('');
+      setSearchResults([]);
+      await load();
+    } finally {
+      setAdding(false);
+    }
+  };
+
   const handleAdd = async () => {
     const symbol = newSymbol.trim().toUpperCase();
     if (!symbol) return;
@@ -80,6 +123,7 @@ export function WatchlistScreen({ navigation }: Props) {
       await fetchQuote(symbol); // validates the symbol exists before saving
       await addToWatchlist(symbol);
       setNewSymbol('');
+      setSearchResults([]);
       await load();
     } catch (e) {
       setRows((prev) => [...prev, { symbol, error: `Could not find symbol "${symbol}"` }]);
@@ -98,8 +142,8 @@ export function WatchlistScreen({ navigation }: Props) {
       <View style={styles.addRow}>
         <TextInput
           style={styles.input}
-          placeholder="Add ticker (e.g. AAPL)"
-          autoCapitalize="characters"
+          placeholder="Search company or ticker"
+          autoCapitalize="none"
           value={newSymbol}
           onChangeText={setNewSymbol}
           onSubmitEditing={handleAdd}
@@ -116,6 +160,23 @@ export function WatchlistScreen({ navigation }: Props) {
         </Pressable>
       </View>
 
+      {searching && <ActivityIndicator size="small" style={{ marginBottom: 8 }} />}
+      {searchResults.length > 0 && (
+        <View style={styles.searchResults}>
+          {searchResults.map((r) => (
+            <Pressable key={r.symbol} style={styles.searchRow} onPress={() => handleAddSymbol(r.symbol)}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.searchSymbol}>{r.symbol}</Text>
+                <Text style={styles.searchName} numberOfLines={1}>
+                  {r.name}
+                </Text>
+              </View>
+              <Ionicons name="add-circle-outline" size={20} color="#0a7d32" />
+            </Pressable>
+          ))}
+        </View>
+      )}
+
       {loading ? (
         <ActivityIndicator style={{ marginTop: 24 }} />
       ) : (
@@ -123,6 +184,7 @@ export function WatchlistScreen({ navigation }: Props) {
           data={rows}
           keyExtractor={(r) => r.symbol}
           contentContainerStyle={{ paddingBottom: 24 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
           renderItem={({ item }) => (
             <Pressable
               style={styles.row}
@@ -158,7 +220,7 @@ export function WatchlistScreen({ navigation }: Props) {
           ListEmptyComponent={
             <View style={styles.empty}>
               <Ionicons name="telescope-outline" size={28} color="#bbb" />
-              <Text style={styles.emptyText}>Add a ticker above to start tracking it.</Text>
+              <Text style={styles.emptyText}>Search above to start tracking a stock.</Text>
             </View>
           }
         />
@@ -169,7 +231,7 @@ export function WatchlistScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16 },
-  addRow: { flexDirection: 'row', marginBottom: 16, gap: 8 },
+  addRow: { flexDirection: 'row', marginBottom: 8, gap: 8 },
   input: {
     flex: 1,
     borderWidth: 1,
@@ -188,6 +250,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   addButtonText: { color: '#fff', fontWeight: '600' },
+  searchResults: {
+    backgroundColor: '#f5f5f5',
+    borderRadius: 8,
+    marginBottom: 12,
+    overflow: 'hidden',
+  },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#ddd',
+    gap: 8,
+  },
+  searchSymbol: { fontWeight: '700' },
+  searchName: { color: '#666', fontSize: 12 },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',

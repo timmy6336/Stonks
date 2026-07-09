@@ -3,6 +3,8 @@ import type { Candle, CompanyProfile, Quote } from '../types';
 const CHART_BASE = 'https://query1.finance.yahoo.com/v8/finance/chart';
 const TRENDING_BASE = 'https://query1.finance.yahoo.com/v1/finance/trending';
 const QUOTE_SUMMARY_BASE = 'https://query2.finance.yahoo.com/v10/finance/quoteSummary';
+const SEARCH_BASE = 'https://query1.finance.yahoo.com/v1/finance/search';
+const SCREENER_BASE = 'https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved';
 
 type ChartResult = {
   meta: {
@@ -134,4 +136,91 @@ export async function fetchCompanyProfile(symbol: string): Promise<CompanyProfil
     website: profile.website ?? null,
     employees: profile.fullTimeEmployees ?? null,
   };
+}
+
+export type SymbolSearchResult = {
+  symbol: string;
+  name: string;
+  exchange: string;
+};
+
+type SearchResponse = {
+  quotes?: Array<{
+    symbol?: string;
+    shortname?: string;
+    longname?: string;
+    quoteType?: string;
+    exchange?: string;
+  }>;
+  news?: Array<{
+    uuid: string;
+    title: string;
+    publisher: string;
+    link: string;
+    providerPublishTime: number;
+  }>;
+};
+
+/** Company-name (or symbol) autocomplete search, so users don't need to know the exact ticker. */
+export async function searchSymbols(query: string, count = 8): Promise<SymbolSearchResult[]> {
+  if (!query.trim()) return [];
+  const res = await fetch(`${SEARCH_BASE}?q=${encodeURIComponent(query)}&quotesCount=${count}&newsCount=0`);
+  if (!res.ok) {
+    throw new Error(`Symbol search failed: HTTP ${res.status}`);
+  }
+  const json: SearchResponse = await res.json();
+  return (json.quotes ?? [])
+    .filter((q) => q.symbol && (q.quoteType === 'EQUITY' || q.quoteType === 'ETF'))
+    .map((q) => ({
+      symbol: q.symbol!,
+      name: q.longname ?? q.shortname ?? q.symbol!,
+      exchange: q.exchange ?? '',
+    }));
+}
+
+export type NewsItem = {
+  id: string;
+  title: string;
+  publisher: string;
+  link: string;
+  publishedAt: number;
+};
+
+/** Recent news headlines related to a symbol (via the same search endpoint Yahoo uses for its news matching). */
+export async function fetchNews(symbol: string, count = 8): Promise<NewsItem[]> {
+  const res = await fetch(`${SEARCH_BASE}?q=${encodeURIComponent(symbol)}&quotesCount=0&newsCount=${count}`);
+  if (!res.ok) {
+    throw new Error(`News request failed for ${symbol}: HTTP ${res.status}`);
+  }
+  const json: SearchResponse = await res.json();
+  return (json.news ?? []).map((n) => ({
+    id: n.uuid,
+    title: n.title,
+    publisher: n.publisher,
+    link: n.link,
+    publishedAt: n.providerPublishTime * 1000,
+  }));
+}
+
+type ScreenerResponse = {
+  finance: {
+    result: Array<{ quotes: Array<{ symbol: string }> }> | null;
+    error: { code: string; description: string } | null;
+  };
+};
+
+export type ScreenerId = 'day_losers' | 'day_gainers' | 'most_actives' | 'undervalued_growth_stocks';
+
+/** Symbols from one of Yahoo's predefined market screeners (a much broader universe than our curated categories). */
+export async function fetchScreener(scrId: ScreenerId, count = 25): Promise<string[]> {
+  const res = await fetch(`${SCREENER_BASE}?formatted=false&lang=en-US&region=US&scrIds=${scrId}&count=${count}`);
+  if (!res.ok) {
+    throw new Error(`Screener request failed: HTTP ${res.status}`);
+  }
+  const json: ScreenerResponse = await res.json();
+  const result = json.finance.result?.[0];
+  if (json.finance.error || !result) {
+    throw new Error('No screener data available right now.');
+  }
+  return result.quotes.map((q) => q.symbol);
 }

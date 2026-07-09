@@ -8,13 +8,24 @@ type Props = {
   row: TickerRowData;
   onPress: (symbol: string) => void;
   onAddToWatchlist?: (symbol: string) => void;
+  showRecoveryHighlight?: boolean;
 };
 
-export function TickerRow({ row, onPress, onAddToWatchlist }: Props) {
+export function TickerRow({ row, onPress, onAddToWatchlist, showRecoveryHighlight }: Props) {
+  const isRecoveryCandidate =
+    showRecoveryHighlight && (row.signal?.score === 'BUY' || row.signal?.score === 'STRONG_BUY');
   return (
     <Pressable style={styles.row} onPress={() => onPress(row.symbol)}>
       <View style={{ flex: 1 }}>
-        <Text style={styles.symbol}>{row.symbol}</Text>
+        <View style={styles.symbolRow}>
+          <Text style={styles.symbol}>{row.symbol}</Text>
+          {isRecoveryCandidate && (
+            <View style={styles.recoveryBadge}>
+              <Ionicons name="trending-up" size={11} color="#fff" />
+              <Text style={styles.recoveryBadgeText}>RECOVERY PICK</Text>
+            </View>
+          )}
+        </View>
         {row.error ? (
           <Text style={styles.error}>{row.error}</Text>
         ) : row.quote ? (
@@ -54,7 +65,18 @@ const styles = StyleSheet.create({
     borderBottomColor: '#ccc',
     gap: 10,
   },
+  symbolRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   symbol: { fontSize: 16, fontWeight: '700' },
+  recoveryBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#c98a12',
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  recoveryBadgeText: { color: '#fff', fontSize: 9, fontWeight: '700' },
   change: { fontSize: 13, marginTop: 2 },
   error: { fontSize: 13, color: '#c0392b', marginTop: 2 },
   addButton: {

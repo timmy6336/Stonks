@@ -1,12 +1,26 @@
 import React, { useCallback, useState } from 'react';
-import { Dimensions, ActivityIndicator, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  Dimensions,
+  ActivityIndicator,
+  Linking,
+  Modal,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { LineChart } from 'react-native-chart-kit';
 import type { StockDetailParams } from '../navigation/types';
-import { fetchCompanyProfile, fetchHistory, fetchQuote } from '../api/marketData';
+import { fetchCompanyProfile, fetchHistory, fetchNews, fetchQuote, type NewsItem } from '../api/marketData';
 import { computeSignal } from '../signals/signalEngine';
 import { computeTrendPrediction, describeTrendPrediction, type TrendPrediction } from '../predictions/trendPrediction';
+import { runSignalBacktest, type BacktestResult } from '../backtest/backtestEngine';
+import { generateInsight, hasGeminiApiKey } from '../llm/llmClient';
 import { executeTrade, getActiveTradingMode } from '../trading/tradingService';
 import { getPosition } from '../db/database';
 import type { Candle, CompanyProfile, Position, Quote, Signal, TradingMode } from '../types';
@@ -36,15 +50,24 @@ export function StockDetailScreen({ route }: Props) {
   const [position, setPosition] = useState<Position | null>(null);
   const [mode, setMode] = useState<TradingMode>('PAPER');
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tradeSide, setTradeSide] = useState<TradeSide | null>(null);
   const [quantity, setQuantity] = useState('1');
   const [submitting, setSubmitting] = useState(false);
   const [tradeError, setTradeError] = useState<string | null>(null);
+  const [backtest, setBacktest] = useState<BacktestResult | null>(null);
+  const [news, setNews] = useState<NewsItem[]>([]);
+  const [aiInsight, setAiInsight] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [hasAiKey, setHasAiKey] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setAiInsight(null);
+    setAiError(null);
     try {
       const [q, history, pos, activeMode] = await Promise.all([
         fetchQuote(symbol),
@@ -56,6 +79,7 @@ export function StockDetailScreen({ route }: Props) {
       setCandles(history);
       setSignal(computeSignal(symbol, history));
       setPrediction(computeTrendPrediction(history));
+      setBacktest(runSignalBacktest(symbol, history));
       setPosition(pos);
       setMode(activeMode);
     } catch (e) {
@@ -69,6 +93,14 @@ export function StockDetailScreen({ route }: Props) {
     } catch {
       setProfile(null); // company profile is a nice-to-have; don't block the rest of the screen on it
     }
+
+    try {
+      setNews(await fetchNews(symbol));
+    } catch {
+      setNews([]); // news is a nice-to-have; don't block the rest of the screen on it
+    }
+
+    setHasAiKey(await hasGeminiApiKey());
   }, [symbol]);
 
   useFocusEffect(
@@ -76,6 +108,34 @@ export function StockDetailScreen({ route }: Props) {
       load();
     }, [load])
   );
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  };
+
+  const handleAskAi = async () => {
+    if (!signal || !quote) return;
+    setAiLoading(true);
+    setAiError(null);
+    setAiInsight(null);
+    try {
+      const prompt =
+        `You're a calm, balanced stock analysis assistant. Give a short (3-5 sentence) plain-English take on ${symbol}` +
+        `${profile ? ` (sector: ${profile.sector ?? 'unknown'}, industry: ${profile.industry ?? 'unknown'})` : ''} ` +
+        `for a casual investor. Don't tell them to buy or sell — summarize the situation and note key considerations/risks.\n\n` +
+        `Current price: $${quote.price.toFixed(2)} (${quote.changePercent >= 0 ? '+' : ''}${quote.changePercent.toFixed(2)}% today).\n` +
+        `Our rule-based technical signal says ${signal.score.replace('_', ' ')} because: ${signal.reasons.join('; ')}.\n` +
+        (prediction ? `Naive linear trend projection: ${describeTrendPrediction(prediction, signal)}\n` : '') +
+        (profile?.summary ? `Company summary: ${profile.summary.slice(0, 400)}` : '');
+      setAiInsight(await generateInsight(prompt));
+    } catch (e) {
+      setAiError((e as Error).message);
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   const openTrade = (side: TradeSide) => {
     setTradeSide(side);
@@ -123,7 +183,11 @@ export function StockDetailScreen({ route }: Props) {
   const chartData = candles.filter((_, i) => i % Math.ceil(candles.length / 60 || 1) === 0);
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ padding: 16 }}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={{ padding: 16 }}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
+    >
       <View style={styles.header}>
         <View>
           <Text style={styles.symbol}>{symbol}</Text>
@@ -175,6 +239,30 @@ export function StockDetailScreen({ route }: Props) {
         </View>
       )}
 
+      {backtest && (
+        <View style={styles.card}>
+          <CardTitle icon="flask">Backtest: does the signal actually help?</CardTitle>
+          <Text style={styles.reason}>
+            Following this signal from {backtest.startDate} to {backtest.endDate} would have returned{' '}
+            <Text style={{ fontWeight: '700', color: backtest.strategyReturnPercent >= 0 ? '#0a7d32' : '#c0392b' }}>
+              {backtest.strategyReturnPercent >= 0 ? '+' : ''}
+              {backtest.strategyReturnPercent.toFixed(1)}%
+            </Text>
+            , versus simply buying and holding at{' '}
+            <Text style={{ fontWeight: '700', color: backtest.buyHoldReturnPercent >= 0 ? '#0a7d32' : '#c0392b' }}>
+              {backtest.buyHoldReturnPercent >= 0 ? '+' : ''}
+              {backtest.buyHoldReturnPercent.toFixed(1)}%
+            </Text>
+            {' '}over the same period ({backtest.trades} trades{backtest.winRate !== null ? `, ${backtest.winRate.toFixed(0)}% of round-trips profitable` : ''}
+            ).
+          </Text>
+          <Text style={styles.disclaimer}>
+            Past performance on one stock over one window proves very little — treat this as a sanity check, not
+            evidence the signal works in general.
+          </Text>
+        </View>
+      )}
+
       {profile && (
         <View style={styles.card}>
           <CardTitle icon="business">About the company</CardTitle>
@@ -193,6 +281,44 @@ export function StockDetailScreen({ route }: Props) {
           )}
         </View>
       )}
+
+      {news.length > 0 && (
+        <View style={styles.card}>
+          <CardTitle icon="newspaper">Latest news</CardTitle>
+          {news.slice(0, 6).map((n) => (
+            <Pressable key={n.id} style={styles.newsRow} onPress={() => Linking.openURL(n.link)}>
+              <Text style={styles.newsTitle} numberOfLines={2}>
+                {n.title}
+              </Text>
+              <Text style={styles.newsMeta}>
+                {n.publisher} · {new Date(n.publishedAt).toLocaleDateString()}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
+
+      <View style={styles.card}>
+        <CardTitle icon="sparkles">AI insight</CardTitle>
+        {!hasAiKey ? (
+          <Text style={styles.reason}>Add a free Gemini API key in Settings to get an AI-generated take on this stock.</Text>
+        ) : (
+          <>
+            <Pressable style={styles.aiButton} onPress={handleAskAi} disabled={aiLoading}>
+              {aiLoading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="sparkles" size={16} color="#fff" />
+                  <Text style={styles.actionText}>Generate AI insight</Text>
+                </>
+              )}
+            </Pressable>
+            {aiError && <Text style={[styles.error, { marginTop: 8 }]}>{aiError}</Text>}
+            {aiInsight && <Text style={[styles.reason, { marginTop: 10 }]}>{aiInsight}</Text>}
+          </>
+        )}
+      </View>
 
       {position && (
         <View style={styles.card}>
@@ -275,6 +401,19 @@ const styles = StyleSheet.create({
   profileMeta: { color: '#666', marginBottom: 8, fontWeight: '600' },
   linkRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
   link: { color: '#0a7d32' },
+  disclaimer: { color: '#999', fontSize: 11, marginTop: 8, fontStyle: 'italic' },
+  newsRow: { paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#ddd' },
+  newsTitle: { color: '#0a7d32', fontWeight: '600', marginBottom: 2 },
+  newsMeta: { color: '#888', fontSize: 11 },
+  aiButton: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#0a7d32',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
   modeRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16 },
   modeLabel: { color: '#666', fontStyle: 'italic' },
   actionRow: { flexDirection: 'row', gap: 12, marginTop: 12 },

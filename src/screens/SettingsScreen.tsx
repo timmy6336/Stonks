@@ -10,6 +10,7 @@ import {
   saveAlpacaCredentials,
   setLiveTradingEnabled,
 } from '../alpaca/alpacaClient';
+import { clearGeminiApiKey, hasGeminiApiKey, saveGeminiApiKey } from '../llm/llmClient';
 
 export function SettingsScreen() {
   const [keyId, setKeyId] = useState('');
@@ -18,11 +19,15 @@ export function SettingsScreen() {
   const [liveEnabled, setLiveEnabled] = useState(false);
   const [saving, setSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [geminiKeyInput, setGeminiKeyInput] = useState('');
+  const [hasGeminiKey, setHasGeminiKey] = useState(false);
+  const [savingGemini, setSavingGemini] = useState(false);
 
   const load = useCallback(async () => {
     const creds = await getAlpacaCredentials();
     setHasCredentials(!!creds);
     setLiveEnabled(await isLiveTradingEnabled());
+    setHasGeminiKey(await hasGeminiApiKey());
   }, []);
 
   useFocusEffect(
@@ -53,6 +58,28 @@ export function SettingsScreen() {
     await clearAlpacaCredentials();
     await load();
     setStatusMessage('Alpaca credentials removed. Live trading disabled.');
+  };
+
+  const handleSaveGemini = async () => {
+    if (!geminiKeyInput.trim()) {
+      setStatusMessage('Enter a Gemini API key.');
+      return;
+    }
+    setSavingGemini(true);
+    try {
+      await saveGeminiApiKey(geminiKeyInput.trim());
+      setGeminiKeyInput('');
+      await load();
+      setStatusMessage('Gemini API key saved.');
+    } finally {
+      setSavingGemini(false);
+    }
+  };
+
+  const handleClearGemini = async () => {
+    await clearGeminiApiKey();
+    await load();
+    setStatusMessage('Gemini API key removed.');
   };
 
   const handleToggleLive = async (value: boolean) => {
@@ -156,6 +183,51 @@ export function SettingsScreen() {
         </View>
         <Switch value={liveEnabled} onValueChange={handleToggleLive} />
       </View>
+
+      <View style={styles.divider} />
+
+      <View style={styles.sectionHeader}>
+        <Ionicons name="sparkles" size={16} color="#0a7d32" />
+        <Text style={styles.sectionTitle}>AI insights (optional)</Text>
+      </View>
+      <Text style={styles.helpText}>
+        Add your own free Gemini API key (from Google AI Studio, aistudio.google.com) to get an AI-generated take on
+        any stock's detail page. Stored only on this device; never sent anywhere but Google's API.
+      </Text>
+      <TextInput
+        style={styles.input}
+        placeholder="Gemini API key"
+        autoCapitalize="none"
+        secureTextEntry
+        value={geminiKeyInput}
+        onChangeText={setGeminiKeyInput}
+      />
+      <Pressable style={styles.saveButton} onPress={handleSaveGemini} disabled={savingGemini}>
+        {savingGemini ? (
+          <Text style={styles.saveButtonText}>Saving…</Text>
+        ) : (
+          <>
+            <Ionicons name="save" size={16} color="#fff" />
+            <Text style={styles.saveButtonText}>Save Gemini key</Text>
+          </>
+        )}
+      </Pressable>
+      <View style={styles.credentialStatusRow}>
+        <Ionicons
+          name={hasGeminiKey ? 'checkmark-circle' : 'alert-circle-outline'}
+          size={14}
+          color={hasGeminiKey ? '#0a7d32' : '#888'}
+        />
+        <Text style={styles.credentialStatus}>
+          {hasGeminiKey ? 'Gemini API key is saved on this device.' : 'No Gemini API key saved yet.'}
+        </Text>
+      </View>
+      {hasGeminiKey && (
+        <Pressable style={styles.clearLinkRow} onPress={handleClearGemini}>
+          <Ionicons name="trash-outline" size={14} color="#c0392b" />
+          <Text style={styles.clearLink}>Remove saved key</Text>
+        </Pressable>
+      )}
 
       {statusMessage && (
         <View style={styles.statusRow}>

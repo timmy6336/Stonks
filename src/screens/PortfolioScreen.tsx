@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, Alert, Dimensions, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Dimensions, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LineChart } from 'react-native-chart-kit';
 import { useFocusEffect } from '@react-navigation/native';
@@ -8,7 +8,27 @@ import type { PortfolioStackParamList } from '../navigation/types';
 import { getActiveProfile, getPositions, getTrades, resetPaperAccount } from '../db/database';
 import { fetchQuote } from '../api/marketData';
 import { computePortfolioPerformance, type PortfolioPerformance } from '../portfolio/portfolioHistory';
+import { STOCK_CATEGORIES } from '../data/categories';
 import type { Position, Profile, Trade } from '../types';
+
+const CATEGORY_COLORS = ['#0a7d32', '#3fa34d', '#7cb342', '#d9822b', '#c0392b', '#8e44ad', '#2980b9', '#16a085', '#999'];
+
+function categoryFor(symbol: string): string {
+  const match = STOCK_CATEGORIES.find((c) => c.symbols.includes(symbol));
+  return match?.name ?? 'Other';
+}
+
+function buildCategoryBreakdown(positions: { symbol: string; value: number }[]) {
+  const totals = new Map<string, number>();
+  for (const p of positions) {
+    const category = categoryFor(p.symbol);
+    totals.set(category, (totals.get(category) ?? 0) + p.value);
+  }
+  const grandTotal = positions.reduce((sum, p) => sum + p.value, 0);
+  return Array.from(totals.entries())
+    .map(([name, value]) => ({ name, value, percent: grandTotal > 0 ? (value / grandTotal) * 100 : 0 }))
+    .sort((a, b) => b.value - a.value);
+}
 
 type PositionRow = Position & { currentPrice?: number };
 type Props = NativeStackScreenProps<PortfolioStackParamList, 'Portfolio'>;
@@ -20,6 +40,7 @@ export function PortfolioScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [performance, setPerformance] = useState<PortfolioPerformance | null>(null);
   const [performanceLoading, setPerformanceLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -69,9 +90,18 @@ export function PortfolioScreen({ navigation }: Props) {
     }, [load])
   );
 
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  };
+
   const cash = profile?.cashBalance ?? 0;
   const marketValue = positions.reduce((sum, p) => sum + (p.currentPrice ?? p.avgCost) * p.quantity, 0);
   const totalValue = cash + marketValue;
+  const categoryBreakdown = buildCategoryBreakdown(
+    positions.map((p) => ({ symbol: p.symbol, value: (p.currentPrice ?? p.avgCost) * p.quantity }))
+  );
 
   const handleReset = () => {
     Alert.alert(
@@ -105,6 +135,7 @@ export function PortfolioScreen({ navigation }: Props) {
       contentContainerStyle={{ padding: 16 }}
       data={positions}
       keyExtractor={(p) => p.symbol}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
       ListHeaderComponent={
         <>
           <Pressable style={styles.saveRow} onPress={() => navigation.navigate('Profiles')}>
@@ -186,6 +217,25 @@ export function PortfolioScreen({ navigation }: Props) {
           ) : (
             <Text style={styles.emptyText}>Buy something to start tracking performance over time.</Text>
           )}
+
+          {categoryBreakdown.length > 0 && (
+            <>
+              <View style={styles.sectionHeader}>
+                <Ionicons name="apps" size={16} color="#0a7d32" />
+                <Text style={styles.sectionTitle}>Diversification</Text>
+              </View>
+              <View style={styles.diversificationCard}>
+                {categoryBreakdown.map((c, i) => (
+                  <View key={c.name} style={styles.diversificationRow}>
+                    <View style={[styles.diversificationDot, { backgroundColor: CATEGORY_COLORS[i % CATEGORY_COLORS.length] }]} />
+                    <Text style={styles.diversificationName}>{c.name}</Text>
+                    <Text style={styles.diversificationPercent}>{c.percent.toFixed(0)}%</Text>
+                  </View>
+                ))}
+              </View>
+            </>
+          )}
+
           <View style={styles.sectionHeader}>
             <Ionicons name="pie-chart" size={16} color="#0a7d32" />
             <Text style={styles.sectionTitle}>Positions</Text>
@@ -276,6 +326,11 @@ const styles = StyleSheet.create({
   periodPercent: { fontWeight: '700', fontSize: 15 },
   periodAmount: { fontSize: 12, color: '#666', marginTop: 2 },
   periodSub: { fontSize: 10, color: '#999', marginTop: 4 },
+  diversificationCard: { backgroundColor: '#f5f5f5', borderRadius: 12, padding: 12, marginBottom: 16 },
+  diversificationRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 5 },
+  diversificationDot: { width: 10, height: 10, borderRadius: 5 },
+  diversificationName: { flex: 1, color: '#333' },
+  diversificationPercent: { fontWeight: '700', color: '#333' },
   empty: { alignItems: 'center', marginVertical: 12, gap: 6 },
   emptyText: { color: '#888' },
   resetButton: { flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: 20, paddingVertical: 12, alignItems: 'center' },
