@@ -544,7 +544,10 @@ export function StockDetailScreen({ route }: Props) {
             <Text style={styles.cardTitle}>
               {tradeSide} {symbol} {mode === 'LIVE' ? '(real order)' : '(simulated)'}
             </Text>
-            <Text style={{ marginBottom: 8, color: colors.text }}>Price: ${quote.price.toFixed(2)}</Text>
+            <Text style={{ marginBottom: 4, color: colors.text }}>Price: ${quote.price.toFixed(2)}</Text>
+            <Text style={{ marginBottom: 8, color: colors.textSecondary }}>
+              You currently own {position ? position.quantity : 0} share{position?.quantity === 1 ? '' : 's'}
+            </Text>
             <TextInput
               style={styles.input}
               keyboardType="numeric"
