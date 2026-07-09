@@ -35,6 +35,9 @@ type YahooChartResponse = {
 async function fetchChart(symbol: string, range: string, interval: string): Promise<ChartResult> {
   const url = `${CHART_BASE}/${encodeURIComponent(symbol)}?range=${range}&interval=${interval}`;
   const res = await fetch(url);
+  if (res.status === 404) {
+    throw new Error(`"${symbol}" isn't a recognized symbol (it may have been delisted or renamed).`);
+  }
   if (!res.ok) {
     throw new Error(`Market data request failed for ${symbol}: HTTP ${res.status}`);
   }

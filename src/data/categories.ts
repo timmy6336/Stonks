@@ -22,5 +22,5 @@ export const STOCK_CATEGORIES: StockCategory[] = [
   { id: 'finance', name: 'Banking & Finance', icon: 'business', symbols: ['JPM', 'BAC', 'WFC', 'GS', 'MS', 'C', 'AXP', 'SCHW'] },
   { id: 'healthcare', name: 'Healthcare & Pharma', icon: 'medkit', symbols: ['JNJ', 'PFE', 'UNH', 'MRK', 'ABBV', 'LLY', 'CVS', 'MRNA'] },
   { id: 'semiconductors', name: 'Semiconductors', icon: 'hardware-chip-outline', symbols: ['NVDA', 'AMD', 'INTC', 'TSM', 'QCOM', 'AVGO', 'MU', 'TXN'] },
-  { id: 'crypto', name: 'Crypto & Fintech', icon: 'logo-bitcoin', symbols: ['COIN', 'MSTR', 'SQ', 'PYPL', 'HOOD', 'MARA', 'RIOT', 'SOFI'] },
+  { id: 'crypto', name: 'Crypto & Fintech', icon: 'logo-bitcoin', symbols: ['COIN', 'MSTR', 'XYZ', 'PYPL', 'HOOD', 'MARA', 'RIOT', 'SOFI'] },
 ];
