@@ -1,19 +1,32 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Dimensions, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LineChart } from 'react-native-chart-kit';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { PortfolioStackParamList } from '../navigation/types';
-import { getActiveProfile, getPositions, getTrades, resetPaperAccount } from '../db/database';
+import { getActiveProfile, getAppStateValue, getPositions, getTrades, resetPaperAccount, setAppStateValue } from '../db/database';
 import { fetchQuote } from '../api/marketData';
-import { computePortfolioPerformance, type PortfolioPerformance } from '../portfolio/portfolioHistory';
+import {
+  computePortfolioPerformance,
+  selectPointsForWindow,
+  type PerformanceWindow,
+  type PortfolioPerformance,
+} from '../portfolio/portfolioHistory';
 import { STOCK_CATEGORIES } from '../data/categories';
 import { useTheme } from '../theme/ThemeContext';
 import { hexToRgba, type ThemeColors } from '../theme/theme';
 import type { Position, Profile, Trade } from '../types';
 
 const CATEGORY_COLORS = ['#0a7d32', '#3fa34d', '#7cb342', '#d9822b', '#c0392b', '#8e44ad', '#2980b9', '#16a085', '#999'];
+
+const CHART_WINDOW_KEY = 'portfolio_chart_window';
+const CHART_WINDOWS: { key: PerformanceWindow; label: string }[] = [
+  { key: 'DAILY', label: 'Daily' },
+  { key: 'WEEKLY', label: 'Weekly' },
+  { key: 'MONTHLY', label: 'Monthly' },
+  { key: 'YEARLY', label: 'Yearly' },
+];
 
 function categoryFor(symbol: string): string {
   const match = STOCK_CATEGORIES.find((c) => c.symbols.includes(symbol));
@@ -45,6 +58,20 @@ export function PortfolioScreen({ navigation }: Props) {
   const [performance, setPerformance] = useState<PortfolioPerformance | null>(null);
   const [performanceLoading, setPerformanceLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [chartWindow, setChartWindowState] = useState<PerformanceWindow>('WEEKLY');
+
+  useEffect(() => {
+    getAppStateValue(CHART_WINDOW_KEY).then((saved) => {
+      if (saved && CHART_WINDOWS.some((w) => w.key === saved)) {
+        setChartWindowState(saved as PerformanceWindow);
+      }
+    });
+  }, []);
+
+  const setChartWindow = (window: PerformanceWindow) => {
+    setChartWindowState(window);
+    setAppStateValue(CHART_WINDOW_KEY, window).catch(() => {});
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -103,6 +130,12 @@ export function PortfolioScreen({ navigation }: Props) {
   const cash = profile?.cashBalance ?? 0;
   const marketValue = positions.reduce((sum, p) => sum + (p.currentPrice ?? p.avgCost) * p.quantity, 0);
   const totalValue = cash + marketValue;
+  const chartPoints = useMemo(
+    () => (performance ? selectPointsForWindow(performance.points, chartWindow) : []),
+    [performance, chartWindow]
+  );
+  // react-native-chart-kit can't draw a line from a single point, so pad a lone bucket into a flat line.
+  const chartValues = chartPoints.length > 1 ? chartPoints.map((p) => p.value) : [chartPoints[0]?.value ?? 0, chartPoints[0]?.value ?? 0];
   const categoryBreakdown = buildCategoryBreakdown(
     positions.map((p) => ({ symbol: p.symbol, value: (p.currentPrice ?? p.avgCost) * p.quantity }))
   );
@@ -166,16 +199,23 @@ export function PortfolioScreen({ navigation }: Props) {
             <ActivityIndicator style={{ marginVertical: 12 }} />
           ) : performance && performance.points.length > 1 ? (
             <>
+              <View style={styles.windowRow}>
+                {CHART_WINDOWS.map((w) => (
+                  <Pressable
+                    key={w.key}
+                    style={[styles.windowChip, chartWindow === w.key && styles.windowChipSelected]}
+                    onPress={() => setChartWindow(w.key)}
+                  >
+                    <Text style={[styles.windowChipText, chartWindow === w.key && styles.windowChipTextSelected]}>
+                      {w.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
               <LineChart
                 data={{
                   labels: [],
-                  datasets: [
-                    {
-                      data: performance.points
-                        .filter((_, i) => i % Math.ceil(performance.points.length / 60 || 1) === 0)
-                        .map((p) => p.value),
-                    },
-                  ],
+                  datasets: [{ data: chartValues }],
                 }}
                 width={Dimensions.get('window').width - 32}
                 height={140}
@@ -324,6 +364,17 @@ function createStyles(colors: ThemeColors) {
     tradeRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
     symbol: { fontWeight: '700', color: colors.text },
     sub: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
+    windowRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
+    windowChip: {
+      flex: 1,
+      alignItems: 'center',
+      paddingVertical: 7,
+      borderRadius: 8,
+      backgroundColor: colors.chipBackground,
+    },
+    windowChipSelected: { backgroundColor: colors.accent },
+    windowChipText: { color: colors.text, fontWeight: '600', fontSize: 12, includeFontPadding: false },
+    windowChipTextSelected: { color: '#fff' },
     periodRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
     periodCard: { flex: 1, backgroundColor: colors.card, borderRadius: 12, padding: 10 },
     periodLabel: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },

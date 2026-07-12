@@ -4,6 +4,52 @@ import type { Candle, Trade } from '../types';
 
 export type PortfolioValuePoint = { date: string; value: number };
 
+export type PerformanceWindow = 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
+
+/** How far back each window looks; null means "all available history". */
+const WINDOW_LOOKBACK_DAYS: Record<PerformanceWindow, number | null> = {
+  DAILY: 30,
+  WEEKLY: 182, // ~6 months
+  MONTHLY: 730, // ~2 years
+  YEARLY: null,
+};
+
+function weekBucketKey(date: string): string {
+  const days = Math.floor(Date.parse(`${date}T00:00:00Z`) / 86_400_000);
+  return String(Math.floor(days / 7));
+}
+
+function bucketKeyFor(window: PerformanceWindow, date: string): string {
+  switch (window) {
+    case 'DAILY':
+      return date;
+    case 'WEEKLY':
+      return weekBucketKey(date);
+    case 'MONTHLY':
+      return date.slice(0, 7);
+    case 'YEARLY':
+      return date.slice(0, 4);
+  }
+}
+
+/**
+ * Narrows and buckets a daily value series down to the requested window — e.g. one point per
+ * week/month/year — so the portfolio chart can show short-term detail or a zoomed-out long-term
+ * trend from the same underlying daily data, without any extra network calls.
+ */
+export function selectPointsForWindow(points: PortfolioValuePoint[], window: PerformanceWindow): PortfolioValuePoint[] {
+  const lookbackDays = WINDOW_LOOKBACK_DAYS[window];
+  const cutoff = lookbackDays != null ? dayKey(Date.now() - lookbackDays * 86_400_000) : null;
+  const scoped = cutoff != null ? points.filter((p) => p.date >= cutoff) : points;
+  if (window === 'DAILY') return scoped;
+
+  const lastInBucket = new Map<string, PortfolioValuePoint>();
+  for (const p of scoped) {
+    lastInBucket.set(bucketKeyFor(window, p.date), p); // later point overwrites, keeping the bucket's last value
+  }
+  return Array.from(lastInBucket.values());
+}
+
 export type PeriodChange = {
   label: string;
   startLabel: string;
@@ -200,7 +246,7 @@ export async function computePortfolioPerformance(
   await Promise.all(
     symbols.map(async (symbol) => {
       try {
-        historyBySymbol.set(symbol, await fetchHistory(symbol, '6mo', '1d'));
+        historyBySymbol.set(symbol, await fetchHistory(symbol, '2y', '1d'));
       } catch {
         historyBySymbol.set(symbol, []);
       }
