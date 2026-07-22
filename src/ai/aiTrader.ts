@@ -2,7 +2,7 @@ import { fetchHistory, fetchQuote, fetchScreener, fetchTrendingSymbols } from '.
 import { computeSignal } from '../signals/signalEngine';
 import { computeTrendPrediction } from '../predictions/trendPrediction';
 import { generateInsight, getActiveProviderId } from '../llm/llmClient';
-import { getPositions, getProfileById, getWatchlist, logAiDecisionRound, recordPaperTrade } from '../db/database';
+import { getAiDecisionLog, getPositions, getProfileById, getWatchlist, logAiDecisionRound, recordPaperTrade } from '../db/database';
 import { STOCK_CATEGORIES } from '../data/categories';
 import type { AiDecisionRound, AiRiskLevel, AiTradeAction, SignalScore, TradeSide } from '../types';
 
@@ -195,6 +195,63 @@ async function gatherIntradayInfo(symbols: string[]): Promise<Map<string, Intrad
   return map;
 }
 
+const TRACK_RECORD_LOOKBACK_ROUNDS = 8;
+const TRACK_RECORD_MAX_ENTRIES = 10;
+
+/**
+ * Builds a short retrospective of the day trader's own recent executed decisions — what it said
+ * ("reasoning") and how the symbol has actually moved since — so each new round can see whether
+ * its own recent calls are working out, not just fresh market data. This is in-context feedback
+ * rather than real training (nothing here changes the model itself), but it's the practical
+ * version available when the model is a hosted API or a tiny on-device one: past reasoning +
+ * outcome, fed back in as part of the next prompt.
+ */
+async function buildRecentTrackRecord(profileId: number): Promise<string | null> {
+  const recentRounds = await getAiDecisionLog(profileId, TRACK_RECORD_LOOKBACK_ROUNDS);
+  const executed: { symbol: string; action: TradeSide; reasoning: string; price: number }[] = [];
+  for (const round of recentRounds) {
+    for (const a of round.actions) {
+      if (a.executed && typeof a.price === 'number') {
+        executed.push({ symbol: a.symbol, action: a.action, reasoning: a.reasoning, price: a.price });
+      }
+    }
+  }
+  if (executed.length === 0) return null;
+
+  const recent = executed.slice(0, TRACK_RECORD_MAX_ENTRIES);
+  const symbols = [...new Set(recent.map((e) => e.symbol))];
+  const quotes = new Map<string, number>();
+  await mapWithConcurrency(symbols, FETCH_CONCURRENCY, async (symbol) => {
+    try {
+      const q = await fetchQuote(symbol);
+      quotes.set(symbol, q.price);
+    } catch {
+      // this entry just won't show an outcome below
+    }
+  });
+
+  const lines: string[] = [];
+  let wins = 0;
+  let scored = 0;
+  let sumPct = 0;
+  for (const e of recent) {
+    const current = quotes.get(e.symbol);
+    if (current == null || e.price === 0) continue;
+    const rawPct = ((current - e.price) / e.price) * 100;
+    const outcomePct = e.action === 'BUY' ? rawPct : -rawPct; // a SELL "wins" if the price fell afterward
+    scored++;
+    sumPct += outcomePct;
+    if (outcomePct > 0) wins++;
+    const reasonExcerpt = e.reasoning.trim().slice(0, 60);
+    lines.push(`- ${e.action} ${e.symbol} ("${reasonExcerpt}") → ${outcomePct >= 0 ? '+' : ''}${outcomePct.toFixed(1)}% since`);
+  }
+  if (scored === 0) return null;
+
+  const winRate = (wins / scored) * 100;
+  const avgPct = sumPct / scored;
+  return `Your recent decisions and how they've gone so far — use this to notice what's working and adjust, not just repeat the same call:\n${lines.join('\n')}\nRecent record: ${winRate.toFixed(0)}% positive (${wins}/${scored}), avg ${avgPct >= 0 ? '+' : ''}${avgPct.toFixed(1)}%.`;
+}
+
 function formatDayTraderLine(c: CandidateInfo, intraday: IntradayInfo | undefined): string {
   const pct = (v: number | null) => (v == null ? 'n/a' : `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`);
   const base = formatCandidateLine(c);
@@ -211,7 +268,8 @@ function buildDayTraderPrompt(
   intradayBySymbol: Map<string, IntradayInfo>,
   buyCandidates: CandidateInfo[],
   maxActions: number,
-  maxPositionPercent: number
+  maxPositionPercent: number,
+  trackRecordText: string | null
 ): string {
   const holdingsText = holdings.length
     ? holdings
@@ -232,20 +290,20 @@ Return "actions": [] if no trade is warranted this round — that is a valid and
 Note: fills are simulated with a small amount of realistic slippage, so your actual execution price may end up slightly worse than the quoted price below — this mimics real trading and is expected.
 
 Your risk setting: ${riskLevel} — ${RISK_CONFIG[riskLevel].description}
-
+${trackRecordText ? `\n${trackRecordText}\n` : ''}
 Portfolio summary:
 - Cash available now: $${cash.toFixed(2)}
 - Total portfolio value: $${totalPortfolioValue.toFixed(2)}
 
-Current holdings (day/1mo/3mo % change, signal, 30-day trend, today's intraday move/range, position, unrealized P&L):
+Current holdings — the ONLY symbols you may SELL (day/1mo/3mo % change, signal, 30-day trend, today's intraday move/range, position, unrealized P&L):
 ${holdingsText}
 
-Buy candidates — signal-filtered for your ${riskLevel} risk setting (day/1mo/3mo % change, signal, 30-day trend, today's intraday move/range):
+Buy candidates — you do NOT own any of these yet, so they are only eligible for BUY, never SELL (day/1mo/3mo % change, signal, 30-day trend, today's intraday move/range):
 ${candidatesText}
 
 Rules:
 - Only use symbols from the lists above; any other symbol will be rejected.
-- Only SELL symbols you currently hold, and never more shares than you hold.
+- Only SELL a symbol that appears in "Current holdings" above with shares > 0, and never more shares than you hold there. The "Buy candidates" list is stocks you do NOT own — never propose SELL for one of those.
 - No single BUY should cost more than ${maxPositionPercent}% of total portfolio value ($${((maxPositionPercent / 100) * totalPortfolioValue).toFixed(2)}).
 - Keep total BUY cost across all actions within the cash available.
 - quantity must be a positive whole number of shares.
@@ -297,15 +355,15 @@ Portfolio summary:
 - Total portfolio value: $${totalPortfolioValue.toFixed(2)} (lifetime ${lifetimePnlPercent >= 0 ? '+' : ''}${lifetimePnlPercent.toFixed(1)}%)
 - Current sector exposure: ${sectorText}
 
-Current holdings (day/1mo/3mo % change, signal, 30-day trend projection, position size):
+Current holdings — the ONLY symbols you may SELL (day/1mo/3mo % change, signal, 30-day trend projection, position size):
 ${holdingsText}
 
-Buy candidates — signal-filtered for your ${riskLevel} risk setting (day/1mo/3mo % change, signal, 30-day trend projection):
+Buy candidates — you do NOT own any of these yet, so they are only eligible for BUY, never SELL (day/1mo/3mo % change, signal, 30-day trend projection):
 ${candidatesText}
 
 Rules:
 - Only use symbols from the lists above; any other symbol will be rejected.
-- Only SELL symbols you currently hold, and never more shares than you hold.
+- Only SELL a symbol that appears in "Current holdings" above with shares > 0, and never more shares than you hold there. The "Buy candidates" list is stocks you do NOT own — never propose SELL for one of those.
 - No single BUY should cost more than ${maxPositionPercent}% of total portfolio value ($${((maxPositionPercent / 100) * totalPortfolioValue).toFixed(2)}).
 - Keep total BUY cost across all actions within the cash available.
 - quantity must be a positive whole number of shares.
@@ -358,14 +416,15 @@ function simulateFill(quotePrice: number, side: TradeSide): number {
 }
 
 /**
- * Salvages whatever it can from a response that got cut off before it finished valid JSON — this
- * happens when the provider hits its output token limit mid-object (e.g. truncated in the middle
- * of an action's "reasoning" string). Rather than losing every proposed action because the very
- * last one didn't finish, pull out the summary text and every *complete* action object via regex;
- * an action object is flat (no nested braces), so a balanced `{...}` match reliably captures only
- * whole ones and naturally drops a trailing partial one.
+ * Salvages whatever it can from a response whose overall JSON structure doesn't parse — either
+ * because it got cut off mid-object (the provider hit its output token limit, often mid-way
+ * through an action's "reasoning" string) or because of a structural slip like wrapping each
+ * action in its own stray array instead of one flat "actions" array. Either way, pull out the
+ * summary text and every *complete* action object via regex; an action object is flat (no nested
+ * braces), so a balanced `{...}` match reliably captures only whole ones regardless of whatever
+ * invalid punctuation surrounds them, and naturally skips a trailing partial one.
  */
-function recoverTruncatedResponse(text: string): { summary?: string; actions?: unknown[] } {
+function recoverMalformedResponse(text: string): { summary?: string; actions?: unknown[] } {
   const summaryMatch = text.match(/"summary"\s*:\s*"((?:[^"\\]|\\.)*)"/);
   const actionMatches = text.match(/\{[^{}]*\}/g) ?? [];
   const actions: unknown[] = [];
@@ -374,15 +433,15 @@ function recoverTruncatedResponse(text: string): { summary?: string; actions?: u
       const obj = JSON.parse(m);
       if (obj && typeof obj === 'object' && 'action' in obj) actions.push(obj);
     } catch {
-      // this object itself didn't finish cleanly either — skip it, not worth guessing at
+      // this object itself didn't parse either — skip it, not worth guessing at
     }
   }
   if (!summaryMatch && actions.length === 0) {
-    throw new Error('Response did not contain a usable JSON object (it may have been cut off).');
+    throw new Error('Response did not contain a usable JSON object.');
   }
-  const truncationNote = ' [response was cut off — later actions this round may be missing]';
+  const recoveryNote = ' [recovered from a malformed response — some actions may be missing]';
   return {
-    summary: (summaryMatch ? summaryMatch[1] : 'No summary provided.') + truncationNote,
+    summary: (summaryMatch ? summaryMatch[1] : 'No summary provided.') + recoveryNote,
     actions,
   };
 }
@@ -400,11 +459,11 @@ function extractJson(raw: string): { summary?: string; actions?: unknown[] } {
     try {
       return JSON.parse(text.slice(start, end + 1));
     } catch {
-      // fall through — the slice from first '{' to last '}' wasn't valid, likely truncated mid-object
+      // fall through — the slice from first '{' to last '}' wasn't valid JSON (truncated, or malformed)
     }
   }
 
-  return recoverTruncatedResponse(text.slice(start));
+  return recoverMalformedResponse(text.slice(start));
 }
 
 /**
@@ -437,9 +496,10 @@ export async function runAiTradingRound(profileId: number): Promise<AiDecisionRo
       ? MAX_CANDIDATES_LOCAL
       : MAX_CANDIDATES_CLOUD;
   const candidateSymbols = await buildCandidateUniverse(heldSymbols, maxCandidates, !isDayTrader);
-  const [infoBySymbol, intradayBySymbol] = await Promise.all([
+  const [infoBySymbol, intradayBySymbol, trackRecordText] = await Promise.all([
     gatherCandidateInfo(candidateSymbols),
     isDayTrader ? gatherIntradayInfo(candidateSymbols) : Promise.resolve(new Map<string, IntradayInfo>()),
+    isDayTrader ? buildRecentTrackRecord(profileId) : Promise.resolve(null),
   ]);
 
   const heldValue = positions.reduce((sum, p) => sum + p.quantity * (infoBySymbol.get(p.symbol)?.price ?? p.avgCost), 0);
@@ -471,7 +531,8 @@ export async function runAiTradingRound(profileId: number): Promise<AiDecisionRo
         intradayBySymbol,
         buyCandidates,
         riskConfig.maxActions,
-        riskConfig.maxPositionPercent
+        riskConfig.maxPositionPercent,
+        trackRecordText
       )
     : buildPrompt(
         profile.riskLevel,
