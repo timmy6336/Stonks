@@ -29,6 +29,10 @@ import type { AiDecisionRound, Position, Profile, Trade } from '../types';
 
 const CATEGORY_COLORS = ['#0a7d32', '#3fa34d', '#7cb342', '#d9822b', '#c0392b', '#8e44ad', '#2980b9', '#16a085', '#999'];
 
+// How often an AI-managed save re-trades while this screen is open. There's no background
+// execution in this app, so consistency is bounded by how long the user keeps it open.
+const AI_RUN_INTERVAL_MS = 60 * 60 * 1000;
+
 const CHART_WINDOW_KEY = 'portfolio_chart_window';
 const CHART_WINDOWS: { key: PerformanceWindow; label: string }[] = [
   { key: 'DAILY', label: 'Daily' },
@@ -152,14 +156,26 @@ export function PortfolioScreen({ navigation }: Props) {
     [load]
   );
 
-  // Auto-run once per calendar day for AI-managed saves, so the experiment progresses even with light usage.
+  // Auto-run on an interval for AI-managed saves whenever this screen is open/focused, so the
+  // experiment trades far more consistently than once a day without needing true background
+  // execution (which this app, with no server and no native background task, can't do).
   useEffect(() => {
     if (loading || aiRunning || !profile?.isAiManaged) return;
-    const lastRunDay = aiLog[0] ? new Date(aiLog[0].timestamp).toDateString() : null;
-    if (lastRunDay !== new Date().toDateString()) {
+    const lastRun = aiLog[0]?.timestamp ?? 0;
+    if (Date.now() - lastRun >= AI_RUN_INTERVAL_MS) {
       handleRunAiRound(profile.id);
     }
   }, [loading, aiRunning, profile, aiLog, handleRunAiRound]);
+
+  // While this screen stays open, keep nudging another round on the same interval rather than only
+  // checking once at focus time.
+  useEffect(() => {
+    if (!profile?.isAiManaged) return;
+    const timer = setInterval(() => {
+      if (!aiRunning) handleRunAiRound(profile.id);
+    }, AI_RUN_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [profile, aiRunning, handleRunAiRound]);
 
   const cash = profile?.cashBalance ?? 0;
   const marketValue = positions.reduce((sum, p) => sum + (p.currentPrice ?? p.avgCost) * p.quantity, 0);
@@ -232,8 +248,9 @@ export function PortfolioScreen({ navigation }: Props) {
                 <Text style={styles.sectionTitle}>AI Trader</Text>
               </View>
               <Text style={styles.aiHint}>
-                This save trades on its own once a day using your active AI provider — no manual buy/sell. An
-                experiment: watch the log below to see how it does.
+                This save trades on its own roughly once an hour while this screen is open, using your active AI
+                provider — no manual buy/sell. There's no background execution, so keep the app open (or check back
+                often) for it to run consistently. An experiment: watch the log below to see how it does.
               </Text>
               <Pressable
                 style={styles.aiRunButton}

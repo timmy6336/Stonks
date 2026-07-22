@@ -1,18 +1,60 @@
-import { fetchHistory, fetchQuote } from '../api/marketData';
+import { fetchHistory, fetchQuote, fetchScreener, fetchTrendingSymbols } from '../api/marketData';
 import { computeSignal } from '../signals/signalEngine';
-import { generateInsight } from '../llm/llmClient';
+import { generateInsight, getActiveProviderId } from '../llm/llmClient';
 import { getCashBalance, getPositions, getWatchlist, logAiDecisionRound, recordPaperTrade } from '../db/database';
 import { STOCK_CATEGORIES } from '../data/categories';
 import type { AiDecisionRound, AiTradeAction, TradeSide } from '../types';
 
-const MAX_CANDIDATES = 20;
+// The local on-device model has a small context window, so it gets a much smaller candidate set
+// than a cloud provider — otherwise the prompt alone could blow past what it can even read.
+const MAX_CANDIDATES_CLOUD = 60;
+const MAX_CANDIDATES_LOCAL = 15;
 const MAX_ACTIONS_PER_ROUND = 5;
+const FETCH_CONCURRENCY = 12;
 
-/** Watchlist symbols plus a broad curated sampling, so the AI has real options beyond what's held. */
-async function buildCandidateUniverse(heldSymbols: string[]): Promise<string[]> {
-  const watchlist = (await getWatchlist()).map((w) => w.symbol);
-  const curated = STOCK_CATEGORIES.flatMap((c) => c.symbols.slice(0, 2));
-  return [...new Set([...heldSymbols, ...watchlist, ...curated])].slice(0, MAX_CANDIDATES);
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
+/** Round-robins through every source list so the combined universe stays diverse instead of one source crowding out the rest. */
+function interleave(lists: string[][]): string[] {
+  const maxLen = Math.max(0, ...lists.map((l) => l.length));
+  const result: string[] = [];
+  for (let i = 0; i < maxLen; i++) {
+    for (const list of lists) {
+      if (list[i]) result.push(list[i]);
+    }
+  }
+  return result;
+}
+
+/**
+ * Builds as broad a candidate universe as is practical: held positions, the watchlist, currently
+ * trending symbols, today's biggest gainers/losers/most-actives, and every curated category —
+ * interleaved for sector diversity, then capped to whatever the active AI provider can reasonably
+ * digest in one prompt.
+ */
+async function buildCandidateUniverse(heldSymbols: string[], maxCandidates: number): Promise<string[]> {
+  const [watchlist, trending, gainers, losers, actives] = await Promise.all([
+    getWatchlist().then((items) => items.map((w) => w.symbol)),
+    fetchTrendingSymbols().catch(() => [] as string[]),
+    fetchScreener('day_gainers', 15).catch(() => [] as string[]),
+    fetchScreener('day_losers', 15).catch(() => [] as string[]),
+    fetchScreener('most_actives', 15).catch(() => [] as string[]),
+  ]);
+
+  const sources = [heldSymbols, watchlist, trending, gainers, losers, actives, ...STOCK_CATEGORIES.map((c) => c.symbols)];
+  const interleaved = interleave(sources);
+  return [...new Set(interleaved)].slice(0, maxCandidates);
 }
 
 type CandidateInfo = {
@@ -25,23 +67,21 @@ type CandidateInfo = {
 
 async function gatherCandidateInfo(symbols: string[]): Promise<Map<string, CandidateInfo>> {
   const map = new Map<string, CandidateInfo>();
-  await Promise.all(
-    symbols.map(async (symbol) => {
-      try {
-        const [quote, history] = await Promise.all([fetchQuote(symbol), fetchHistory(symbol, '6mo', '1d')]);
-        const signal = computeSignal(symbol, history);
-        map.set(symbol, {
-          symbol,
-          price: quote.price,
-          changePercent: quote.changePercent,
-          signalScore: signal.score,
-          reasons: signal.reasons,
-        });
-      } catch {
-        // skip symbols we can't price right now rather than failing the whole round
-      }
-    })
-  );
+  await mapWithConcurrency(symbols, FETCH_CONCURRENCY, async (symbol) => {
+    try {
+      const [quote, history] = await Promise.all([fetchQuote(symbol), fetchHistory(symbol, '6mo', '1d')]);
+      const signal = computeSignal(symbol, history);
+      map.set(symbol, {
+        symbol,
+        price: quote.price,
+        changePercent: quote.changePercent,
+        signalScore: signal.score,
+        reasons: signal.reasons.slice(0, 2), // keep the prompt compact across a large candidate set
+      });
+    } catch {
+      // skip symbols we can't price right now rather than failing the whole round
+    }
+  });
   return map;
 }
 
@@ -104,9 +144,14 @@ function extractJson(raw: string): { summary?: string; actions?: unknown[] } {
  * inputs aside, but the raw response and every action's outcome) for transparency.
  */
 export async function runAiTradingRound(profileId: number): Promise<AiDecisionRound> {
-  const [cash, positions] = await Promise.all([getCashBalance(profileId), getPositions(profileId)]);
+  const [cash, positions, activeProviderId] = await Promise.all([
+    getCashBalance(profileId),
+    getPositions(profileId),
+    getActiveProviderId(),
+  ]);
   const heldSymbols = positions.map((p) => p.symbol);
-  const candidateSymbols = await buildCandidateUniverse(heldSymbols);
+  const maxCandidates = activeProviderId === 'local' ? MAX_CANDIDATES_LOCAL : MAX_CANDIDATES_CLOUD;
+  const candidateSymbols = await buildCandidateUniverse(heldSymbols, maxCandidates);
   const infoBySymbol = await gatherCandidateInfo(candidateSymbols);
 
   const holdingsForPrompt = positions
