@@ -26,5 +26,4 @@ linux:
     - target: AppImage
       arch: [x64]
   category: Finance
-  desktopName: stonks.desktop
   synopsis: Stock trend tracker and paper-trading simulator
