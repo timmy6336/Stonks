@@ -303,7 +303,7 @@ ${candidatesText}
 
 Rules:
 - Only use symbols from the lists above; any other symbol will be rejected.
-- Only SELL a symbol that appears in "Current holdings" above with shares > 0, and never more shares than you hold there. The "Buy candidates" list is stocks you do NOT own — never propose SELL for one of those.
+- Only SELL a symbol that appears in "Current holdings" above with shares > 0. The "Buy candidates" list is stocks you do NOT own — never propose SELL for one of those. If you SELL more shares than you actually hold, it will be clamped down to selling everything you hold instead of being rejected.
 - No single BUY should cost more than ${maxPositionPercent}% of total portfolio value ($${((maxPositionPercent / 100) * totalPortfolioValue).toFixed(2)}).
 - Keep total BUY cost across all actions within the cash available.
 - quantity must be a positive whole number of shares.
@@ -363,7 +363,7 @@ ${candidatesText}
 
 Rules:
 - Only use symbols from the lists above; any other symbol will be rejected.
-- Only SELL a symbol that appears in "Current holdings" above with shares > 0, and never more shares than you hold there. The "Buy candidates" list is stocks you do NOT own — never propose SELL for one of those.
+- Only SELL a symbol that appears in "Current holdings" above with shares > 0. The "Buy candidates" list is stocks you do NOT own — never propose SELL for one of those. If you SELL more shares than you actually hold, it will be clamped down to selling everything you hold instead of being rejected.
 - No single BUY should cost more than ${maxPositionPercent}% of total portfolio value ($${((maxPositionPercent / 100) * totalPortfolioValue).toFixed(2)}).
 - Keep total BUY cost across all actions within the cash available.
 - quantity must be a positive whole number of shares.
@@ -637,16 +637,21 @@ export async function runAiTradingRound(profileId: number): Promise<AiDecisionRo
       }
     } else {
       const held = runningHoldings.get(symbol) ?? 0;
-      if (quantity > held) {
-        fail(`Cannot sell ${quantity} shares — only ${held} held.`);
+      if (held <= 0) {
+        fail(`Cannot sell ${symbol} — none held.`);
         continue;
       }
+      // An over-sized SELL still has a clear, valid intent (exit the position), so clamp it to a
+      // full liquidation of what's actually held rather than rejecting the action outright —
+      // that only wastes the round's action slot on a call the AI was directionally right about.
+      const sellQuantity = Math.min(quantity, held);
+      const clampedNote = sellQuantity < quantity ? ` (clamped from ${quantity} to ${sellQuantity} — only that many were held)` : '';
       try {
         const fillPrice = simulateFill(info.price, 'SELL');
-        await recordPaperTrade(symbol, 'SELL', quantity, fillPrice, profileId);
-        runningCash += quantity * fillPrice;
-        runningHoldings.set(symbol, held - quantity);
-        results.push({ action, symbol, quantity, reasoning, executed: true, price: fillPrice });
+        await recordPaperTrade(symbol, 'SELL', sellQuantity, fillPrice, profileId);
+        runningCash += sellQuantity * fillPrice;
+        runningHoldings.set(symbol, held - sellQuantity);
+        results.push({ action, symbol, quantity: sellQuantity, reasoning: reasoning + clampedNote, executed: true, price: fillPrice });
       } catch (e) {
         fail((e as Error).message);
       }
