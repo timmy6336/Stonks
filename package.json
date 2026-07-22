@@ -1,6 +1,8 @@
 {
   "name": "stonks",
   "version": "1.0.0",
+  "description": "Stock trend tracker and paper-trading simulator.",
+  "author": "Stonks",
   "main": "index.ts",
   "dependencies": {
     "@expo/metro-runtime": "^57.0.3",
@@ -40,7 +42,7 @@
     "web": "expo start --web",
     "web:build": "expo export -p web",
     "desktop": "npm run web:build && electron electron",
-    "desktop:build": "npm run web:build && electron-builder --config electron-builder.yml"
+    "desktop:build": "npm run web:build && electron-builder --config electron-builder.yml --publish never"
   },
   "private": true
 }
