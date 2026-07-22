@@ -283,8 +283,8 @@ function buildDayTraderPrompt(
   const candidatesText = buyCandidates.map((c) => formatDayTraderLine(c, intradayBySymbol.get(c.symbol))).join('\n');
 
   return `You are an autonomous DAY TRADER managing a simulated stock portfolio. Your goal is to make as much money as possible TODAY by actively trading — you are expected to buy and sell far more often than a long-term investor, take quick profits, cut losses fast, and re-enter a symbol again later in the day if the setup still looks good. Decide what to do RIGHT NOW using ONLY the data below; you will be asked again in just a few minutes, so it's fine to do nothing this round if nothing looks compelling.
-Respond with ONLY valid JSON, no markdown fences, no commentary, in exactly this shape:
-{"summary": "one or two sentences on your reasoning this round", "actions": [{"action": "BUY", "symbol": "TICKER", "quantity": 1, "reasoning": "short reason"}]}
+Respond with ONLY valid JSON, no markdown fences, no commentary, in exactly this shape (this is just an example — "AAPL" is a placeholder too, always substitute a real symbol from the lists below, never the literal word "TICKER" or any symbol not shown below):
+{"summary": "one or two sentences on your reasoning this round", "actions": [{"action": "BUY", "symbol": "AAPL", "quantity": 1, "reasoning": "short reason"}]}
 Each entry in "actions" MUST be a JSON object with those exact four fields — "action", "symbol", "quantity", "reasoning". Never put a plain string like "BUY TSLA" in the actions array; it will be rejected.
 Return "actions": [] if no trade is warranted this round — that is a valid and often correct choice between rounds only minutes apart.
 Note: fills are simulated with a small amount of realistic slippage, so your actual execution price may end up slightly worse than the quoted price below — this mimics real trading and is expected.
@@ -342,8 +342,8 @@ function buildPrompt(
 
   const candidatesText = buyCandidates.map(formatCandidateLine).join('\n');
 
-  return `You are an autonomous paper-trading agent managing a simulated stock portfolio. Decide what, if anything, to buy or sell right now using ONLY the data below. Respond with ONLY valid JSON, no markdown fences, no commentary, in exactly this shape:
-{"summary": "one or two sentences on your overall reasoning this round", "actions": [{"action": "BUY", "symbol": "TICKER", "quantity": 1, "reasoning": "short reason"}]}
+  return `You are an autonomous paper-trading agent managing a simulated stock portfolio. Decide what, if anything, to buy or sell right now using ONLY the data below. Respond with ONLY valid JSON, no markdown fences, no commentary, in exactly this shape (this is just an example — "AAPL" is a placeholder too, always substitute a real symbol from the lists below, never the literal word "TICKER" or any symbol not shown below):
+{"summary": "one or two sentences on your overall reasoning this round", "actions": [{"action": "BUY", "symbol": "AAPL", "quantity": 1, "reasoning": "short reason"}]}
 Each entry in "actions" MUST be a JSON object with those exact four fields — "action", "symbol", "quantity", "reasoning". Never put a plain string like "BUY TSLA" in the actions array; it will be rejected.
 Return "actions": [] if no trade is warranted right now — that is a valid and often correct choice. You are encouraged to propose several BUY and/or SELL actions in the same round when you have multiple good ideas, rather than limiting yourself to one.
 
