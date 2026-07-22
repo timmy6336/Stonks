@@ -23,6 +23,7 @@ import {
 import { LLM_PROVIDERS, type LLMProviderId } from '../llm/providers';
 import { deleteModel, downloadModel, isModelDownloaded, LOCAL_MODEL } from '../llm/localModel';
 import { unloadLocalModel } from '../llm/localLlmEngine';
+import { disableBackgroundTrading, enableBackgroundTrading, isBackgroundTradingEnabled } from '../ai/backgroundTask';
 import { useTheme } from '../theme/ThemeContext';
 import type { ThemeColors } from '../theme/theme';
 
@@ -48,11 +49,14 @@ export function SettingsScreen({ navigation }: Props) {
   const [localModelDownloaded, setLocalModelDownloaded] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
   const downloadAbortRef = useRef<AbortController | null>(null);
+  const [backgroundTradingEnabled, setBackgroundTradingEnabledState] = useState(false);
+  const [backgroundToggleBusy, setBackgroundToggleBusy] = useState(false);
 
   const load = useCallback(async () => {
     const creds = await getAlpacaCredentials();
     setHasCredentials(!!creds);
     setLiveEnabled(await isLiveTradingEnabled());
+    setBackgroundTradingEnabledState(await isBackgroundTradingEnabled());
     const keyChecks = await Promise.all(LLM_PROVIDERS.map((p) => hasProviderApiKey(p.id)));
     setProviderHasKey(Object.fromEntries(LLM_PROVIDERS.map((p, i) => [p.id, keyChecks[i]])) as Record<LLMProviderId, boolean>);
     setActiveProviderIdState(await getActiveProviderId());
@@ -177,6 +181,22 @@ export function SettingsScreen({ navigation }: Props) {
         },
       ]
     );
+  };
+
+  const handleToggleBackgroundTrading = async (value: boolean) => {
+    setBackgroundToggleBusy(true);
+    try {
+      if (value) {
+        await enableBackgroundTrading(15);
+      } else {
+        await disableBackgroundTrading();
+      }
+      setBackgroundTradingEnabledState(await isBackgroundTradingEnabled());
+    } catch (e) {
+      Alert.alert('Could not update background trading', (e as Error).message);
+    } finally {
+      setBackgroundToggleBusy(false);
+    }
   };
 
   return (
@@ -389,6 +409,24 @@ export function SettingsScreen({ navigation }: Props) {
           <Text style={styles.status}>{statusMessage}</Text>
         </View>
       )}
+
+      <View style={styles.divider} />
+
+      <View style={styles.liveRow}>
+        <View style={{ flex: 1 }}>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="cloud-outline" size={16} color={colors.accent} />
+            <Text style={styles.sectionTitle}>AI Trader background runs (experimental)</Text>
+          </View>
+          <Text style={styles.helpText}>
+            Lets AI-managed saves attempt a trading round roughly every 15 minutes even while the app isn't open, via
+            Android's WorkManager. This is best-effort, not a guarantee: the OS can delay it far beyond 15 minutes
+            depending on battery state and Doze mode, and it stops entirely if you force-stop the app from Android's
+            app info screen. Uses more battery than leaving it off.
+          </Text>
+        </View>
+        <Switch value={backgroundTradingEnabled} onValueChange={handleToggleBackgroundTrading} disabled={backgroundToggleBusy} />
+      </View>
 
       <View style={styles.divider} />
 
