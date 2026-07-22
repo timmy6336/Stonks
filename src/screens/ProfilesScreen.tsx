@@ -7,12 +7,25 @@ import type { PortfolioStackParamList } from '../navigation/types';
 import { createProfile, deleteProfile, getActiveProfileId, getProfiles, setActiveProfileId, DEFAULT_STARTING_CASH } from '../db/database';
 import { useTheme } from '../theme/ThemeContext';
 import type { ThemeColors } from '../theme/theme';
-import type { AiRiskLevel, Profile } from '../types';
+import type { AiRiskLevel, AiTradingStyle, Profile } from '../types';
 
 const RISK_LEVELS: { level: AiRiskLevel; label: string; hint: string }[] = [
   { level: 'LOW', label: 'Low', hint: 'Smaller positions, only acts on BUY-or-better signals.' },
   { level: 'MODERATE', label: 'Moderate', hint: 'Balanced position sizes, some room to act on HOLD too.' },
   { level: 'HIGH', label: 'High', hint: 'Larger, concentrated positions; can chase momentum or contrarian plays.' },
+];
+
+const TRADING_STYLES: { style: AiTradingStyle; label: string; hint: string }[] = [
+  {
+    style: 'STANDARD',
+    label: 'Standard',
+    hint: 'Longer-term positions, checks in on a slower interval (default 1 hour).',
+  },
+  {
+    style: 'DAY_TRADER',
+    label: 'Day trader',
+    hint: 'Trades aggressively on a fast interval (as often as every minute) chasing intraday moves — much more active, much noisier.',
+  },
 ];
 
 type Props = NativeStackScreenProps<PortfolioStackParamList, 'Profiles'>;
@@ -28,6 +41,7 @@ export function ProfilesScreen({ navigation }: Props) {
   const [newStartingCash, setNewStartingCash] = useState(String(DEFAULT_STARTING_CASH));
   const [newIsAiManaged, setNewIsAiManaged] = useState(false);
   const [newRiskLevel, setNewRiskLevel] = useState<AiRiskLevel>('MODERATE');
+  const [newTradingStyle, setNewTradingStyle] = useState<AiTradingStyle>('STANDARD');
   const [formError, setFormError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -62,11 +76,12 @@ export function ProfilesScreen({ navigation }: Props) {
     setFormError(null);
     setCreating(true);
     try {
-      const profile = await createProfile(newName.trim(), cash, newIsAiManaged, newRiskLevel);
+      const profile = await createProfile(newName.trim(), cash, newIsAiManaged, newRiskLevel, newTradingStyle);
       setNewName('');
       setNewStartingCash(String(DEFAULT_STARTING_CASH));
       setNewIsAiManaged(false);
       setNewRiskLevel('MODERATE');
+      setNewTradingStyle('STANDARD');
       await load();
       setActiveId(profile.id);
       navigation.goBack();
@@ -125,8 +140,10 @@ export function ProfilesScreen({ navigation }: Props) {
               <Text style={styles.name}>{item.name}</Text>
               {item.isAiManaged && (
                 <View style={styles.aiBadge}>
-                  <Ionicons name="sparkles" size={10} color="#fff" />
-                  <Text style={styles.aiBadgeText}>AI · {item.riskLevel}</Text>
+                  <Ionicons name={item.tradingStyle === 'DAY_TRADER' ? 'flash' : 'sparkles'} size={10} color="#fff" />
+                  <Text style={styles.aiBadgeText}>
+                    AI · {item.tradingStyle === 'DAY_TRADER' ? 'DAY TRADER' : item.riskLevel}
+                  </Text>
                 </View>
               )}
             </View>
@@ -179,6 +196,25 @@ export function ProfilesScreen({ navigation }: Props) {
             </View>
             <Switch value={newIsAiManaged} onValueChange={setNewIsAiManaged} />
           </View>
+          {newIsAiManaged && (
+            <View style={styles.riskSection}>
+              <Text style={styles.riskSectionLabel}>Trading style</Text>
+              <View style={styles.riskRow}>
+                {TRADING_STYLES.map((s) => (
+                  <Pressable
+                    key={s.style}
+                    style={[styles.riskChip, newTradingStyle === s.style && styles.riskChipSelected]}
+                    onPress={() => setNewTradingStyle(s.style)}
+                  >
+                    <Text style={[styles.riskChipText, newTradingStyle === s.style && styles.riskChipTextSelected]}>
+                      {s.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Text style={styles.aiToggleHint}>{TRADING_STYLES.find((s) => s.style === newTradingStyle)!.hint}</Text>
+            </View>
+          )}
           {newIsAiManaged && (
             <View style={styles.riskSection}>
               <Text style={styles.riskSectionLabel}>Risk setting</Text>

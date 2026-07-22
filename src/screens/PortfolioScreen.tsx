@@ -30,15 +30,24 @@ import type { AiDecisionRound, Position, Profile, Trade } from '../types';
 const CATEGORY_COLORS = ['#0a7d32', '#3fa34d', '#7cb342', '#d9822b', '#c0392b', '#8e44ad', '#2980b9', '#16a085', '#999'];
 
 // How often an AI-managed save re-trades while this screen is open. There's no background
-// execution in this app, so consistency is bounded by how long the user keeps it open.
-const AI_RUN_INTERVAL_KEY = 'ai_run_interval_minutes';
+// execution in this app, so consistency is bounded by how long the user keeps it open. Stored
+// per-profile so a day trader save and a standard save can each keep their own cadence.
+const aiRunIntervalKey = (profileId: number) => `ai_run_interval_minutes_${profileId}`;
 const DEFAULT_AI_RUN_INTERVAL_MINUTES = 60;
-const AI_RUN_INTERVAL_OPTIONS = [
+const DEFAULT_DAY_TRADER_RUN_INTERVAL_MINUTES = 5;
+const STANDARD_INTERVAL_OPTIONS = [
   { minutes: 15, label: '15 min' },
   { minutes: 30, label: '30 min' },
   { minutes: 60, label: '1 hr' },
   { minutes: 120, label: '2 hr' },
   { minutes: 240, label: '4 hr' },
+];
+const DAY_TRADER_INTERVAL_OPTIONS = [
+  { minutes: 1, label: '1 min' },
+  { minutes: 2, label: '2 min' },
+  { minutes: 5, label: '5 min' },
+  { minutes: 10, label: '10 min' },
+  { minutes: 15, label: '15 min' },
 ];
 
 const CHART_WINDOW_KEY = 'portfolio_chart_window';
@@ -90,17 +99,31 @@ export function PortfolioScreen({ navigation }: Props) {
         setChartWindowState(saved as PerformanceWindow);
       }
     });
-    getAppStateValue(AI_RUN_INTERVAL_KEY).then((saved) => {
+  }, []);
+
+  const intervalOptions = profile?.tradingStyle === 'DAY_TRADER' ? DAY_TRADER_INTERVAL_OPTIONS : STANDARD_INTERVAL_OPTIONS;
+
+  // Each profile keeps its own remembered interval (a day trader save and a standard save
+  // shouldn't share one cadence), defaulting differently based on trading style until the user
+  // picks something else.
+  useEffect(() => {
+    if (!profile) return;
+    const defaultMinutes =
+      profile.tradingStyle === 'DAY_TRADER' ? DEFAULT_DAY_TRADER_RUN_INTERVAL_MINUTES : DEFAULT_AI_RUN_INTERVAL_MINUTES;
+    getAppStateValue(aiRunIntervalKey(profile.id)).then((saved) => {
       const minutes = Number(saved);
-      if (saved && AI_RUN_INTERVAL_OPTIONS.some((o) => o.minutes === minutes)) {
+      const options = profile.tradingStyle === 'DAY_TRADER' ? DAY_TRADER_INTERVAL_OPTIONS : STANDARD_INTERVAL_OPTIONS;
+      if (saved && options.some((o) => o.minutes === minutes)) {
         setAiRunIntervalMinutesState(minutes);
+      } else {
+        setAiRunIntervalMinutesState(defaultMinutes);
       }
     });
-  }, []);
+  }, [profile?.id, profile?.tradingStyle]);
 
   const setAiRunIntervalMinutes = (minutes: number) => {
     setAiRunIntervalMinutesState(minutes);
-    setAppStateValue(AI_RUN_INTERVAL_KEY, String(minutes)).catch(() => {});
+    if (profile) setAppStateValue(aiRunIntervalKey(profile.id), String(minutes)).catch(() => {});
   };
 
   const setChartWindow = (window: PerformanceWindow) => {
@@ -264,19 +287,21 @@ export function PortfolioScreen({ navigation }: Props) {
           {profile?.isAiManaged && (
             <View style={styles.aiCard}>
               <View style={styles.sectionHeader}>
-                <Ionicons name="sparkles" size={16} color={colors.accent} />
-                <Text style={styles.sectionTitle}>AI Trader</Text>
+                <Ionicons name={profile.tradingStyle === 'DAY_TRADER' ? 'flash' : 'sparkles'} size={16} color={colors.accent} />
+                <Text style={styles.sectionTitle}>{profile.tradingStyle === 'DAY_TRADER' ? 'AI Day Trader' : 'AI Trader'}</Text>
                 <View style={styles.aiRiskBadge}>
                   <Text style={styles.aiRiskBadgeText}>{profile.riskLevel} RISK</Text>
                 </View>
               </View>
               <Text style={styles.aiHint}>
-                This save trades on its own on the interval below while this screen is open, using your active AI
-                provider — no manual buy/sell. There's no background execution, so keep the app open (or check back
-                often) for it to run consistently. An experiment: watch the log below to see how it does.
+                {profile.tradingStyle === 'DAY_TRADER'
+                  ? 'This save trades aggressively on the fast interval below, chasing intraday moves and taking quick profits/losses — no manual buy/sell. Very active AI providers may hit free-tier rate limits at short intervals.'
+                  : 'This save trades on its own on the interval below while this screen is open, using your active AI provider — no manual buy/sell.'}
+                {' '}There's no background execution, so keep the app open (or check back often) for it to run
+                consistently. An experiment: watch the log below to see how it does.
               </Text>
               <View style={styles.aiIntervalRow}>
-                {AI_RUN_INTERVAL_OPTIONS.map((o) => (
+                {intervalOptions.map((o) => (
                   <Pressable
                     key={o.minutes}
                     style={[styles.aiIntervalChip, aiRunIntervalMinutes === o.minutes && styles.aiIntervalChipSelected]}

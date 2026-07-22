@@ -58,6 +58,7 @@ export type Alert = {
 };
 
 export type AiRiskLevel = 'LOW' | 'MODERATE' | 'HIGH';
+export type AiTradingStyle = 'STANDARD' | 'DAY_TRADER';
 
 export type Profile = {
   id: number;
@@ -67,6 +68,7 @@ export type Profile = {
   createdAt: number;
   isAiManaged: boolean;
   riskLevel: AiRiskLevel;
+  tradingStyle: AiTradingStyle;
 };
 
 export type Position = {

@@ -10,6 +10,11 @@ import type { AiDecisionRound, AiRiskLevel, AiTradeAction, SignalScore, TradeSid
 // than a cloud provider — otherwise the prompt alone could blow past what it can even read.
 const MAX_CANDIDATES_CLOUD = 60;
 const MAX_CANDIDATES_LOCAL = 15;
+// Day-trader rounds run far more often (as often as every minute), so the candidate set stays
+// small and focused on liquid/volatile movers rather than the full slow-moving curated universe —
+// this keeps each round's network + prompt cost low enough to sustain that pace.
+const MAX_CANDIDATES_DAY_TRADER_CLOUD = 25;
+const MAX_CANDIDATES_DAY_TRADER_LOCAL = 10;
 const FETCH_CONCURRENCY = 12;
 
 type RiskConfig = {
@@ -70,11 +75,15 @@ function interleave(lists: string[][]): string[] {
 
 /**
  * Builds as broad a candidate universe as is practical: held positions, the watchlist, currently
- * trending symbols, today's biggest gainers/losers/most-actives, and every curated category —
- * interleaved for sector diversity, then capped to whatever the active AI provider can reasonably
- * digest in one prompt.
+ * trending symbols, today's biggest gainers/losers/most-actives, and (unless day-trading, where
+ * speed and liquidity matter more than breadth) every curated category — interleaved for sector
+ * diversity, then capped to whatever the active AI provider can reasonably digest in one prompt.
  */
-async function buildCandidateUniverse(heldSymbols: string[], maxCandidates: number): Promise<string[]> {
+async function buildCandidateUniverse(
+  heldSymbols: string[],
+  maxCandidates: number,
+  includeCuratedCategories: boolean
+): Promise<string[]> {
   const [watchlist, trending, gainers, losers, actives] = await Promise.all([
     getWatchlist().then((items) => items.map((w) => w.symbol)),
     fetchTrendingSymbols().catch(() => [] as string[]),
@@ -83,7 +92,8 @@ async function buildCandidateUniverse(heldSymbols: string[], maxCandidates: numb
     fetchScreener('most_actives', 15).catch(() => [] as string[]),
   ]);
 
-  const sources = [heldSymbols, watchlist, trending, gainers, losers, actives, ...STOCK_CATEGORIES.map((c) => c.symbols)];
+  const sources = [heldSymbols, watchlist, trending, gainers, losers, actives];
+  if (includeCuratedCategories) sources.push(...STOCK_CATEGORIES.map((c) => c.symbols));
   const interleaved = interleave(sources);
   return [...new Set(interleaved)].slice(0, maxCandidates);
 }
@@ -146,6 +156,101 @@ function formatCandidateLine(c: CandidateInfo): string {
 }
 
 type HoldingInfo = CandidateInfo & { quantity: number; avgCost: number; weightPercent: number };
+
+type IntradayInfo = {
+  intradayChangePercent: number | null; // change from the earliest available bar today to the latest
+  lastHourChangePercent: number | null; // change over roughly the most recent hour of bars
+  pctOfIntradayRange: number | null; // 0% = at today's low so far, 100% = at today's high so far
+};
+
+/**
+ * Fetches short-interval intraday bars for day-trader candidates — the daily signal/trend data
+ * from gatherCandidateInfo is too coarse to say anything about what a stock has done in the last
+ * hour, which is what a day-trading decision actually hinges on.
+ */
+async function gatherIntradayInfo(symbols: string[]): Promise<Map<string, IntradayInfo>> {
+  const map = new Map<string, IntradayInfo>();
+  await mapWithConcurrency(symbols, FETCH_CONCURRENCY, async (symbol) => {
+    try {
+      const bars = await fetchHistory(symbol, '1d', '5m');
+      if (bars.length < 2) return;
+      const closes = bars.map((b) => b.close);
+      const highs = bars.map((b) => b.high);
+      const lows = bars.map((b) => b.low);
+      const latest = closes[closes.length - 1];
+      const first = closes[0];
+      const hourBarsBack = Math.min(closes.length - 1, 12); // ~12 x 5min bars = 1 hour
+      const hourAgo = closes[closes.length - 1 - hourBarsBack];
+      const dayHigh = Math.max(...highs);
+      const dayLow = Math.min(...lows);
+      map.set(symbol, {
+        intradayChangePercent: first !== 0 ? ((latest - first) / first) * 100 : null,
+        lastHourChangePercent: hourAgo !== 0 ? ((latest - hourAgo) / hourAgo) * 100 : null,
+        pctOfIntradayRange: dayHigh !== dayLow ? ((latest - dayLow) / (dayHigh - dayLow)) * 100 : null,
+      });
+    } catch {
+      // no intraday bars available (e.g. market closed) — the prompt just shows "n/a" for this symbol
+    }
+  });
+  return map;
+}
+
+function formatDayTraderLine(c: CandidateInfo, intraday: IntradayInfo | undefined): string {
+  const pct = (v: number | null) => (v == null ? 'n/a' : `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`);
+  const base = formatCandidateLine(c);
+  if (!intraday) return `${base} | today n/a`;
+  const rangePos = intraday.pctOfIntradayRange == null ? 'n/a' : `${intraday.pctOfIntradayRange.toFixed(0)}% of today's range`;
+  return `${base} | today ${pct(intraday.intradayChangePercent)}, last hr ${pct(intraday.lastHourChangePercent)}, at ${rangePos}`;
+}
+
+function buildDayTraderPrompt(
+  riskLevel: AiRiskLevel,
+  cash: number,
+  totalPortfolioValue: number,
+  holdings: HoldingInfo[],
+  intradayBySymbol: Map<string, IntradayInfo>,
+  buyCandidates: CandidateInfo[],
+  maxActions: number,
+  maxPositionPercent: number
+): string {
+  const holdingsText = holdings.length
+    ? holdings
+        .map((h) => {
+          const pnlPercent = h.avgCost !== 0 ? ((h.price - h.avgCost) / h.avgCost) * 100 : 0;
+          return `${formatDayTraderLine(h, intradayBySymbol.get(h.symbol))} | ${h.quantity} sh @ avg $${h.avgCost.toFixed(2)} (${pnlPercent >= 0 ? '+' : ''}${pnlPercent.toFixed(1)}% unrealized), ${h.weightPercent.toFixed(0)}% of portfolio`;
+        })
+        .join('\n')
+    : '- (no current holdings)';
+
+  const candidatesText = buyCandidates.map((c) => formatDayTraderLine(c, intradayBySymbol.get(c.symbol))).join('\n');
+
+  return `You are an autonomous DAY TRADER managing a simulated stock portfolio. Your goal is to make as much money as possible TODAY by actively trading — you are expected to buy and sell far more often than a long-term investor, take quick profits, cut losses fast, and re-enter a symbol again later in the day if the setup still looks good. Decide what to do RIGHT NOW using ONLY the data below; you will be asked again in just a few minutes, so it's fine to do nothing this round if nothing looks compelling.
+Respond with ONLY valid JSON, no markdown fences, no commentary, in exactly this shape:
+{"summary": "one or two sentences on your reasoning this round", "actions": [{"action": "BUY", "symbol": "TICKER", "quantity": 1, "reasoning": "short reason"}]}
+Each entry in "actions" MUST be a JSON object with those exact four fields — "action", "symbol", "quantity", "reasoning". Never put a plain string like "BUY TSLA" in the actions array; it will be rejected.
+Return "actions": [] if no trade is warranted this round — that is a valid and often correct choice between rounds only minutes apart.
+Note: fills are simulated with a small amount of realistic slippage, so your actual execution price may end up slightly worse than the quoted price below — this mimics real trading and is expected.
+
+Your risk setting: ${riskLevel} — ${RISK_CONFIG[riskLevel].description}
+
+Portfolio summary:
+- Cash available now: $${cash.toFixed(2)}
+- Total portfolio value: $${totalPortfolioValue.toFixed(2)}
+
+Current holdings (day/1mo/3mo % change, signal, 30-day trend, today's intraday move/range, position, unrealized P&L):
+${holdingsText}
+
+Buy candidates — signal-filtered for your ${riskLevel} risk setting (day/1mo/3mo % change, signal, 30-day trend, today's intraday move/range):
+${candidatesText}
+
+Rules:
+- Only use symbols from the lists above; any other symbol will be rejected.
+- Only SELL symbols you currently hold, and never more shares than you hold.
+- No single BUY should cost more than ${maxPositionPercent}% of total portfolio value ($${((maxPositionPercent / 100) * totalPortfolioValue).toFixed(2)}).
+- Keep total BUY cost across all actions within the cash available.
+- quantity must be a positive whole number of shares.
+- Propose at most ${maxActions} actions this round. Prefer decisive action when intraday momentum is clearly running one way; do nothing rather than force a trade when the picture is unclear.`;
+}
 
 function buildPrompt(
   riskLevel: AiRiskLevel,
@@ -238,6 +343,18 @@ function normalizeAction(entry: unknown): { action: TradeSide | ''; symbol: stri
   return { action: '', symbol: '', quantity: 0, reasoning: '' };
 }
 
+/**
+ * Simulates a non-instantaneous, imperfect fill instead of executing at the exact last-quoted
+ * price. Real orders cross a bid-ask spread and take a moment to route/fill, during which the
+ * price can drift — modeled here as a small random slippage that always nudges the fill slightly
+ * against the trader (buys fill a bit higher, sells a bit lower).
+ */
+function simulateFill(quotePrice: number, side: TradeSide): number {
+  const slippageBps = 2 + Math.random() * 8; // ~0.02%-0.10%, in line with a liquid large-cap's typical spread
+  const factor = side === 'BUY' ? 1 + slippageBps / 10000 : 1 - slippageBps / 10000;
+  return Math.round(quotePrice * factor * 100) / 100;
+}
+
 function extractJson(raw: string): { summary?: string; actions?: unknown[] } {
   const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
   const text = fenced ? fenced[1] : raw;
@@ -269,10 +386,20 @@ export async function runAiTradingRound(profileId: number): Promise<AiDecisionRo
 
   const cash = profile.cashBalance;
   const riskConfig = RISK_CONFIG[profile.riskLevel];
+  const isDayTrader = profile.tradingStyle === 'DAY_TRADER';
   const heldSymbols = positions.map((p) => p.symbol);
-  const maxCandidates = activeProviderId === 'local' ? MAX_CANDIDATES_LOCAL : MAX_CANDIDATES_CLOUD;
-  const candidateSymbols = await buildCandidateUniverse(heldSymbols, maxCandidates);
-  const infoBySymbol = await gatherCandidateInfo(candidateSymbols);
+  const maxCandidates = isDayTrader
+    ? activeProviderId === 'local'
+      ? MAX_CANDIDATES_DAY_TRADER_LOCAL
+      : MAX_CANDIDATES_DAY_TRADER_CLOUD
+    : activeProviderId === 'local'
+      ? MAX_CANDIDATES_LOCAL
+      : MAX_CANDIDATES_CLOUD;
+  const candidateSymbols = await buildCandidateUniverse(heldSymbols, maxCandidates, !isDayTrader);
+  const [infoBySymbol, intradayBySymbol] = await Promise.all([
+    gatherCandidateInfo(candidateSymbols),
+    isDayTrader ? gatherIntradayInfo(candidateSymbols) : Promise.resolve(new Map<string, IntradayInfo>()),
+  ]);
 
   const heldValue = positions.reduce((sum, p) => sum + p.quantity * (infoBySymbol.get(p.symbol)?.price ?? p.avgCost), 0);
   const totalPortfolioValue = cash + heldValue;
@@ -294,16 +421,27 @@ export async function runAiTradingRound(profileId: number): Promise<AiDecisionRo
     return logAiDecisionRound(profileId, 'No market data available this round — skipped.', null, []);
   }
 
-  const prompt = buildPrompt(
-    profile.riskLevel,
-    profile.startingCash,
-    cash,
-    totalPortfolioValue,
-    holdingsForPrompt,
-    buyCandidates,
-    riskConfig.maxActions,
-    riskConfig.maxPositionPercent
-  );
+  const prompt = isDayTrader
+    ? buildDayTraderPrompt(
+        profile.riskLevel,
+        cash,
+        totalPortfolioValue,
+        holdingsForPrompt,
+        intradayBySymbol,
+        buyCandidates,
+        riskConfig.maxActions,
+        riskConfig.maxPositionPercent
+      )
+    : buildPrompt(
+        profile.riskLevel,
+        profile.startingCash,
+        cash,
+        totalPortfolioValue,
+        holdingsForPrompt,
+        buyCandidates,
+        riskConfig.maxActions,
+        riskConfig.maxPositionPercent
+      );
 
   let rawResponse: string;
   try {
@@ -354,7 +492,8 @@ export async function runAiTradingRound(profileId: number): Promise<AiDecisionRo
     }
 
     if (action === 'BUY') {
-      const cost = quantity * info.price;
+      const fillPrice = simulateFill(info.price, 'BUY');
+      const cost = quantity * fillPrice;
       if (cost > positionCap) {
         fail(`Cost $${cost.toFixed(2)} exceeds the ${riskConfig.maxPositionPercent}% position-size cap ($${positionCap.toFixed(2)}) for ${profile.riskLevel} risk.`);
         continue;
@@ -364,10 +503,10 @@ export async function runAiTradingRound(profileId: number): Promise<AiDecisionRo
         continue;
       }
       try {
-        await recordPaperTrade(symbol, 'BUY', quantity, info.price, profileId);
+        await recordPaperTrade(symbol, 'BUY', quantity, fillPrice, profileId);
         runningCash -= cost;
         runningHoldings.set(symbol, (runningHoldings.get(symbol) ?? 0) + quantity);
-        results.push({ action, symbol, quantity, reasoning, executed: true, price: info.price });
+        results.push({ action, symbol, quantity, reasoning, executed: true, price: fillPrice });
       } catch (e) {
         fail((e as Error).message);
       }
@@ -378,10 +517,11 @@ export async function runAiTradingRound(profileId: number): Promise<AiDecisionRo
         continue;
       }
       try {
-        await recordPaperTrade(symbol, 'SELL', quantity, info.price, profileId);
-        runningCash += quantity * info.price;
+        const fillPrice = simulateFill(info.price, 'SELL');
+        await recordPaperTrade(symbol, 'SELL', quantity, fillPrice, profileId);
+        runningCash += quantity * fillPrice;
         runningHoldings.set(symbol, held - quantity);
-        results.push({ action, symbol, quantity, reasoning, executed: true, price: info.price });
+        results.push({ action, symbol, quantity, reasoning, executed: true, price: fillPrice });
       } catch (e) {
         fail((e as Error).message);
       }
