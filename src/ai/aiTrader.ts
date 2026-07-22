@@ -199,57 +199,90 @@ const TRACK_RECORD_LOOKBACK_ROUNDS = 8;
 const TRACK_RECORD_MAX_ENTRIES = 10;
 
 /**
- * Builds a short retrospective of the day trader's own recent executed decisions — what it said
- * ("reasoning") and how the symbol has actually moved since — so each new round can see whether
- * its own recent calls are working out, not just fresh market data. This is in-context feedback
- * rather than real training (nothing here changes the model itself), but it's the practical
- * version available when the model is a hosted API or a tiny on-device one: past reasoning +
- * outcome, fed back in as part of the next prompt.
+ * Builds a short retrospective of the day trader's own recent responses, covering two different
+ * kinds of feedback:
+ *  1. Outcome feedback — what it said ("reasoning") for each executed trade and how the symbol
+ *     has actually moved since, so it can see whether its own recent calls are working out.
+ *  2. Formatting/logic feedback — actions that were rejected (wrong symbol, oversold, disallowed
+ *     signal, etc.) or whole responses that couldn't be parsed at all, with the exact reason, so
+ *     it can see *why* a past response failed and stop repeating the same mistake.
+ * This is in-context feedback rather than real training (nothing here changes the model itself),
+ * but it's the practical version available when the model is a hosted API or a tiny on-device
+ * one: past reasoning, results, and errors, fed back in as part of the next prompt.
  */
 async function buildRecentTrackRecord(profileId: number): Promise<string | null> {
   const recentRounds = await getAiDecisionLog(profileId, TRACK_RECORD_LOOKBACK_ROUNDS);
+  if (recentRounds.length === 0) return null;
+
   const executed: { symbol: string; action: TradeSide; reasoning: string; price: number }[] = [];
+  const failed: { symbol: string; action: TradeSide; error: string }[] = [];
+  const parseFailures: string[] = [];
   for (const round of recentRounds) {
+    if (round.actions.length === 0 && round.rawResponse) {
+      // A response came back but nothing could be parsed or recovered from it at all.
+      parseFailures.push(round.summary);
+    }
     for (const a of round.actions) {
       if (a.executed && typeof a.price === 'number') {
         executed.push({ symbol: a.symbol, action: a.action, reasoning: a.reasoning, price: a.price });
+      } else if (!a.executed) {
+        failed.push({ symbol: a.symbol, action: a.action, error: a.error ?? 'unknown error' });
       }
     }
   }
-  if (executed.length === 0) return null;
 
-  const recent = executed.slice(0, TRACK_RECORD_MAX_ENTRIES);
-  const symbols = [...new Set(recent.map((e) => e.symbol))];
-  const quotes = new Map<string, number>();
-  await mapWithConcurrency(symbols, FETCH_CONCURRENCY, async (symbol) => {
-    try {
-      const q = await fetchQuote(symbol);
-      quotes.set(symbol, q.price);
-    } catch {
-      // this entry just won't show an outcome below
+  const sections: string[] = [];
+
+  const recentExecuted = executed.slice(0, TRACK_RECORD_MAX_ENTRIES);
+  if (recentExecuted.length > 0) {
+    const symbols = [...new Set(recentExecuted.map((e) => e.symbol))];
+    const quotes = new Map<string, number>();
+    await mapWithConcurrency(symbols, FETCH_CONCURRENCY, async (symbol) => {
+      try {
+        const q = await fetchQuote(symbol);
+        quotes.set(symbol, q.price);
+      } catch {
+        // this entry just won't show an outcome below
+      }
+    });
+
+    const lines: string[] = [];
+    let wins = 0;
+    let scored = 0;
+    let sumPct = 0;
+    for (const e of recentExecuted) {
+      const current = quotes.get(e.symbol);
+      if (current == null || e.price === 0) continue;
+      const rawPct = ((current - e.price) / e.price) * 100;
+      const outcomePct = e.action === 'BUY' ? rawPct : -rawPct; // a SELL "wins" if the price fell afterward
+      scored++;
+      sumPct += outcomePct;
+      if (outcomePct > 0) wins++;
+      const reasonExcerpt = e.reasoning.trim().slice(0, 60);
+      lines.push(`- ${e.action} ${e.symbol} ("${reasonExcerpt}") → ${outcomePct >= 0 ? '+' : ''}${outcomePct.toFixed(1)}% since`);
     }
-  });
-
-  const lines: string[] = [];
-  let wins = 0;
-  let scored = 0;
-  let sumPct = 0;
-  for (const e of recent) {
-    const current = quotes.get(e.symbol);
-    if (current == null || e.price === 0) continue;
-    const rawPct = ((current - e.price) / e.price) * 100;
-    const outcomePct = e.action === 'BUY' ? rawPct : -rawPct; // a SELL "wins" if the price fell afterward
-    scored++;
-    sumPct += outcomePct;
-    if (outcomePct > 0) wins++;
-    const reasonExcerpt = e.reasoning.trim().slice(0, 60);
-    lines.push(`- ${e.action} ${e.symbol} ("${reasonExcerpt}") → ${outcomePct >= 0 ? '+' : ''}${outcomePct.toFixed(1)}% since`);
+    if (scored > 0) {
+      const winRate = (wins / scored) * 100;
+      const avgPct = sumPct / scored;
+      sections.push(
+        `Your recent EXECUTED decisions and how they've gone so far — use this to notice what's working and adjust, not just repeat the same call:\n${lines.join('\n')}\nRecent record: ${winRate.toFixed(0)}% positive (${wins}/${scored}), avg ${avgPct >= 0 ? '+' : ''}${avgPct.toFixed(1)}%.`
+      );
+    }
   }
-  if (scored === 0) return null;
 
-  const winRate = (wins / scored) * 100;
-  const avgPct = sumPct / scored;
-  return `Your recent decisions and how they've gone so far — use this to notice what's working and adjust, not just repeat the same call:\n${lines.join('\n')}\nRecent record: ${winRate.toFixed(0)}% positive (${wins}/${scored}), avg ${avgPct >= 0 ? '+' : ''}${avgPct.toFixed(1)}%.`;
+  const mistakeLines: string[] = [];
+  for (const p of parseFailures.slice(0, 3)) {
+    mistakeLines.push(`- A past response could not be used at all: "${p.slice(0, 140)}"`);
+  }
+  for (const f of failed.slice(0, 5)) {
+    mistakeLines.push(`- ${f.action} ${f.symbol || '(missing symbol)'} was rejected: ${f.error}`);
+  }
+  if (mistakeLines.length > 0) {
+    sections.push(`Recent mistakes in your own responses — fix the pattern, don't repeat it:\n${mistakeLines.join('\n')}`);
+  }
+
+  if (sections.length === 0) return null;
+  return sections.join('\n\n');
 }
 
 function formatDayTraderLine(c: CandidateInfo, intraday: IntradayInfo | undefined): string {
