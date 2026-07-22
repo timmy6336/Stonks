@@ -180,6 +180,7 @@ function buildPrompt(
 
   return `You are an autonomous paper-trading agent managing a simulated stock portfolio. Decide what, if anything, to buy or sell right now using ONLY the data below. Respond with ONLY valid JSON, no markdown fences, no commentary, in exactly this shape:
 {"summary": "one or two sentences on your overall reasoning this round", "actions": [{"action": "BUY", "symbol": "TICKER", "quantity": 1, "reasoning": "short reason"}]}
+Each entry in "actions" MUST be a JSON object with those exact four fields — "action", "symbol", "quantity", "reasoning". Never put a plain string like "BUY TSLA" in the actions array; it will be rejected.
 Return "actions": [] if no trade is warranted right now — that is a valid and often correct choice. You are encouraged to propose several BUY and/or SELL actions in the same round when you have multiple good ideas, rather than limiting yourself to one.
 
 Your risk setting: ${riskLevel} — ${RISK_CONFIG[riskLevel].description}
@@ -203,6 +204,38 @@ Rules:
 - Keep total BUY cost across all actions within the cash available.
 - quantity must be a positive whole number of shares.
 - Propose at most ${maxActions} actions this round.`;
+}
+
+/**
+ * Normalizes one proposed action into a consistent shape. The AI is asked for objects, but some
+ * providers (especially smaller/local models) occasionally emit plain strings like "BUY TSLA"
+ * instead — rather than discarding those as "unrecognized", pull out the action/symbol/quantity
+ * with a best-effort regex so a formatting slip doesn't waste the whole round.
+ */
+function normalizeAction(entry: unknown): { action: TradeSide | ''; symbol: string; quantity: number; reasoning: string } {
+  if (entry && typeof entry === 'object') {
+    const e = entry as Record<string, unknown>;
+    return {
+      action: e.action === 'SELL' ? 'SELL' : e.action === 'BUY' ? 'BUY' : '',
+      symbol: typeof e.symbol === 'string' ? e.symbol.toUpperCase() : '',
+      quantity: Math.floor(Number(e.quantity)),
+      reasoning: typeof e.reasoning === 'string' ? e.reasoning.slice(0, 300) : '',
+    };
+  }
+  if (typeof entry === 'string') {
+    const actionMatch = entry.match(/\b(BUY|SELL)\b/i);
+    const action: TradeSide | '' = actionMatch ? (actionMatch[1].toUpperCase() as TradeSide) : '';
+    const withoutAction = entry.toUpperCase().replace(/\b(BUY|SELL)\b/, '');
+    const symbolMatch = withoutAction.match(/[A-Z]{1,6}(?:\.[A-Z]{1,3})?/);
+    const qtyMatch = entry.match(/\d+/);
+    return {
+      action,
+      symbol: symbolMatch ? symbolMatch[0] : '',
+      quantity: qtyMatch ? parseInt(qtyMatch[0], 10) : 1,
+      reasoning: '(the AI sent a plain-text action instead of the requested JSON object; quantity was inferred and defaults to 1 if unspecified)',
+    };
+  }
+  return { action: '', symbol: '', quantity: 0, reasoning: '' };
 }
 
 function extractJson(raw: string): { summary?: string; actions?: unknown[] } {
@@ -295,11 +328,8 @@ export async function runAiTradingRound(profileId: number): Promise<AiDecisionRo
   const positionCap = (riskConfig.maxPositionPercent / 100) * totalPortfolioValue;
   const results: AiTradeAction[] = [];
 
-  for (const entry of proposedActions as Record<string, unknown>[]) {
-    const symbol = typeof entry?.symbol === 'string' ? entry.symbol.toUpperCase() : '';
-    const action: TradeSide | '' = entry?.action === 'SELL' ? 'SELL' : entry?.action === 'BUY' ? 'BUY' : '';
-    const quantity = Math.floor(Number(entry?.quantity));
-    const reasoning = typeof entry?.reasoning === 'string' ? entry.reasoning.slice(0, 300) : '';
+  for (const entry of proposedActions) {
+    const { action, symbol, quantity, reasoning } = normalizeAction(entry);
     const info = infoBySymbol.get(symbol);
 
     const fail = (error: string) => {
