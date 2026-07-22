@@ -1,16 +1,47 @@
 import { fetchHistory, fetchQuote, fetchScreener, fetchTrendingSymbols } from '../api/marketData';
 import { computeSignal } from '../signals/signalEngine';
+import { computeTrendPrediction } from '../predictions/trendPrediction';
 import { generateInsight, getActiveProviderId } from '../llm/llmClient';
-import { getCashBalance, getPositions, getWatchlist, logAiDecisionRound, recordPaperTrade } from '../db/database';
+import { getPositions, getProfileById, getWatchlist, logAiDecisionRound, recordPaperTrade } from '../db/database';
 import { STOCK_CATEGORIES } from '../data/categories';
-import type { AiDecisionRound, AiTradeAction, TradeSide } from '../types';
+import type { AiDecisionRound, AiRiskLevel, AiTradeAction, SignalScore, TradeSide } from '../types';
 
 // The local on-device model has a small context window, so it gets a much smaller candidate set
 // than a cloud provider — otherwise the prompt alone could blow past what it can even read.
 const MAX_CANDIDATES_CLOUD = 60;
 const MAX_CANDIDATES_LOCAL = 15;
-const MAX_ACTIONS_PER_ROUND = 5;
 const FETCH_CONCURRENCY = 12;
+
+type RiskConfig = {
+  maxPositionPercent: number; // largest single BUY, as % of total portfolio value
+  allowedBuySignals: SignalScore[]; // which signals a *new* buy candidate must have (holdings are always sellable)
+  maxActions: number;
+  description: string;
+};
+
+const RISK_CONFIG: Record<AiRiskLevel, RiskConfig> = {
+  LOW: {
+    maxPositionPercent: 10,
+    allowedBuySignals: ['STRONG_BUY', 'BUY'],
+    maxActions: 4,
+    description:
+      'LOW risk: preserve capital first. Only buy stocks with a BUY or STRONG_BUY signal, keep individual positions modest, and favor established, less volatile names over speculative ones. Selling to cut a clear loser or lock in a solid gain is always reasonable.',
+  },
+  MODERATE: {
+    maxPositionPercent: 20,
+    allowedBuySignals: ['STRONG_BUY', 'BUY', 'HOLD'],
+    maxActions: 6,
+    description:
+      'MODERATE risk: balance growth and safety. You can act on BUY-or-better signals and occasionally a HOLD if the trend projection and history make a strong case, with sensible position sizes and some spread across sectors.',
+  },
+  HIGH: {
+    maxPositionPercent: 40,
+    allowedBuySignals: ['STRONG_BUY', 'BUY', 'HOLD', 'SELL', 'STRONG_SELL'],
+    maxActions: 8,
+    description:
+      'HIGH risk: chase larger gains and accept larger swings. You may take concentrated, high-conviction positions, act on momentum or contrarian plays even against a weaker signal if the trend/history make a compelling case, and commit a larger share of cash to your best ideas.',
+  },
+};
 
 async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const results: R[] = new Array(items.length);
@@ -57,12 +88,29 @@ async function buildCandidateUniverse(heldSymbols: string[], maxCandidates: numb
   return [...new Set(interleaved)].slice(0, maxCandidates);
 }
 
+function categoryFor(symbol: string): string {
+  return STOCK_CATEGORIES.find((c) => c.symbols.includes(symbol))?.name ?? 'Other';
+}
+
+/** % change from N trading days ago to the latest close, using whatever history is available. */
+function pctChangeOverTradingDays(closes: number[], daysBack: number): number | null {
+  const idx = closes.length - 1 - daysBack;
+  if (idx < 0) return null;
+  const past = closes[idx];
+  const latest = closes[closes.length - 1];
+  return past !== 0 ? ((latest - past) / past) * 100 : null;
+}
+
 type CandidateInfo = {
   symbol: string;
   price: number;
   changePercent: number;
-  signalScore: string;
+  oneMonthChangePercent: number | null;
+  threeMonthChangePercent: number | null;
+  signalScore: SignalScore;
   reasons: string[];
+  trendDirection: 'up' | 'down' | 'flat' | null;
+  trendProjectedChangePercent: number | null;
 };
 
 async function gatherCandidateInfo(symbols: string[]): Promise<Map<string, CandidateInfo>> {
@@ -71,12 +119,18 @@ async function gatherCandidateInfo(symbols: string[]): Promise<Map<string, Candi
     try {
       const [quote, history] = await Promise.all([fetchQuote(symbol), fetchHistory(symbol, '6mo', '1d')]);
       const signal = computeSignal(symbol, history);
+      const closes = history.map((c) => c.close);
+      const trend = computeTrendPrediction(history);
       map.set(symbol, {
         symbol,
         price: quote.price,
         changePercent: quote.changePercent,
+        oneMonthChangePercent: pctChangeOverTradingDays(closes, 21),
+        threeMonthChangePercent: pctChangeOverTradingDays(closes, 63),
         signalScore: signal.score,
         reasons: signal.reasons.slice(0, 2), // keep the prompt compact across a large candidate set
+        trendDirection: trend?.direction ?? null,
+        trendProjectedChangePercent: trend?.projectedChangePercent ?? null,
       });
     } catch {
       // skip symbols we can't price right now rather than failing the whole round
@@ -85,44 +139,70 @@ async function gatherCandidateInfo(symbols: string[]): Promise<Map<string, Candi
   return map;
 }
 
+function formatCandidateLine(c: CandidateInfo): string {
+  const pct = (v: number | null) => (v == null ? 'n/a' : `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`);
+  const trend = c.trendDirection ? `${c.trendDirection} ${pct(c.trendProjectedChangePercent)}/30d` : 'n/a';
+  return `- ${c.symbol} $${c.price.toFixed(2)} (day ${pct(c.changePercent)}, 1mo ${pct(c.oneMonthChangePercent)}, 3mo ${pct(c.threeMonthChangePercent)}) sig=${c.signalScore} trend=${trend} rsn: ${c.reasons.join('; ') || 'none'}`;
+}
+
+type HoldingInfo = CandidateInfo & { quantity: number; avgCost: number; weightPercent: number };
+
 function buildPrompt(
+  riskLevel: AiRiskLevel,
+  startingCash: number,
   cash: number,
-  holdings: { symbol: string; quantity: number; avgCost: number; currentPrice: number }[],
-  candidates: CandidateInfo[]
+  totalPortfolioValue: number,
+  holdings: HoldingInfo[],
+  buyCandidates: CandidateInfo[],
+  maxActions: number,
+  maxPositionPercent: number
 ): string {
+  const lifetimePnlPercent = startingCash !== 0 ? ((totalPortfolioValue - startingCash) / startingCash) * 100 : 0;
+
+  const sectorTotals = new Map<string, number>();
+  for (const h of holdings) {
+    const cat = categoryFor(h.symbol);
+    sectorTotals.set(cat, (sectorTotals.get(cat) ?? 0) + h.quantity * h.price);
+  }
+  const heldValue = holdings.reduce((sum, h) => sum + h.quantity * h.price, 0);
+  const sectorText =
+    heldValue > 0
+      ? Array.from(sectorTotals.entries())
+          .map(([name, value]) => `${name} ${((value / heldValue) * 100).toFixed(0)}%`)
+          .join(', ')
+      : 'no current exposure';
+
   const holdingsText = holdings.length
-    ? holdings
-        .map((h) => {
-          const pnlPercent = h.avgCost !== 0 ? ((h.currentPrice - h.avgCost) / h.avgCost) * 100 : 0;
-          return `- ${h.symbol}: ${h.quantity} shares @ avg $${h.avgCost.toFixed(2)}, now $${h.currentPrice.toFixed(2)} (${pnlPercent >= 0 ? '+' : ''}${pnlPercent.toFixed(1)}%)`;
-        })
-        .join('\n')
+    ? holdings.map((h) => `${formatCandidateLine(h)} | ${h.quantity} sh @ avg $${h.avgCost.toFixed(2)}, weight ${h.weightPercent.toFixed(0)}% of portfolio`).join('\n')
     : '- (no current holdings)';
 
-  const candidatesText = candidates
-    .map(
-      (c) =>
-        `- ${c.symbol}: $${c.price.toFixed(2)} (${c.changePercent >= 0 ? '+' : ''}${c.changePercent.toFixed(1)}% today), signal ${c.signalScore}, reasons: ${c.reasons.join('; ')}`
-    )
-    .join('\n');
+  const candidatesText = buyCandidates.map(formatCandidateLine).join('\n');
 
   return `You are an autonomous paper-trading agent managing a simulated stock portfolio. Decide what, if anything, to buy or sell right now using ONLY the data below. Respond with ONLY valid JSON, no markdown fences, no commentary, in exactly this shape:
-{"summary": "one sentence on your overall reasoning this round", "actions": [{"action": "BUY", "symbol": "TICKER", "quantity": 1, "reasoning": "short reason"}]}
-Return "actions": [] if no trade is warranted right now — that is a valid and often correct choice.
+{"summary": "one or two sentences on your overall reasoning this round", "actions": [{"action": "BUY", "symbol": "TICKER", "quantity": 1, "reasoning": "short reason"}]}
+Return "actions": [] if no trade is warranted right now — that is a valid and often correct choice. You are encouraged to propose several BUY and/or SELL actions in the same round when you have multiple good ideas, rather than limiting yourself to one.
 
-Account:
-- Cash available: $${cash.toFixed(2)}
-- Current holdings:
+Your risk setting: ${riskLevel} — ${RISK_CONFIG[riskLevel].description}
+
+Portfolio summary:
+- Starting cash (lifetime): $${startingCash.toFixed(2)}
+- Cash available now: $${cash.toFixed(2)}
+- Total portfolio value: $${totalPortfolioValue.toFixed(2)} (lifetime ${lifetimePnlPercent >= 0 ? '+' : ''}${lifetimePnlPercent.toFixed(1)}%)
+- Current sector exposure: ${sectorText}
+
+Current holdings (day/1mo/3mo % change, signal, 30-day trend projection, position size):
 ${holdingsText}
 
-Symbols you may act on (buy candidates and/or current holdings):
+Buy candidates — signal-filtered for your ${riskLevel} risk setting (day/1mo/3mo % change, signal, 30-day trend projection):
 ${candidatesText}
 
 Rules:
-- Only use symbols from the list above; any other symbol will be rejected.
+- Only use symbols from the lists above; any other symbol will be rejected.
 - Only SELL symbols you currently hold, and never more shares than you hold.
-- Keep total BUY cost within the cash available.
-- quantity must be a positive whole number of shares.`;
+- No single BUY should cost more than ${maxPositionPercent}% of total portfolio value ($${((maxPositionPercent / 100) * totalPortfolioValue).toFixed(2)}).
+- Keep total BUY cost across all actions within the cash available.
+- quantity must be a positive whole number of shares.
+- Propose at most ${maxActions} actions this round.`;
 }
 
 function extractJson(raw: string): { summary?: string; actions?: unknown[] } {
@@ -137,36 +217,60 @@ function extractJson(raw: string): { summary?: string; actions?: unknown[] } {
 }
 
 /**
- * Runs one autonomous trading round for an AI-managed save: gathers price/signal data for the
- * save's watchlist plus a curated candidate set, asks the active AI provider for buy/sell
- * decisions, validates them against real cash/holdings constraints, and executes whatever passes
- * through the same paper-trading engine manual trades use. Every round is logged in full (prompt
- * inputs aside, but the raw response and every action's outcome) for transparency.
+ * Runs one autonomous trading round for an AI-managed save: gathers price, recent-history %
+ * change, trend projection, and signal data for the save's current holdings plus a broad
+ * candidate universe (buy candidates are pre-filtered by the save's risk setting), asks the
+ * active AI provider for buy/sell decisions, validates each one against real cash/holdings/
+ * position-size constraints, and executes whatever passes through the same paper-trading engine
+ * manual trades use. Every round is logged in full for transparency.
  */
 export async function runAiTradingRound(profileId: number): Promise<AiDecisionRound> {
-  const [cash, positions, activeProviderId] = await Promise.all([
-    getCashBalance(profileId),
+  const [profile, positions, activeProviderId] = await Promise.all([
+    getProfileById(profileId),
     getPositions(profileId),
     getActiveProviderId(),
   ]);
+  if (!profile) {
+    return logAiDecisionRound(profileId, 'Save no longer exists — skipped.', null, []);
+  }
+
+  const cash = profile.cashBalance;
+  const riskConfig = RISK_CONFIG[profile.riskLevel];
   const heldSymbols = positions.map((p) => p.symbol);
   const maxCandidates = activeProviderId === 'local' ? MAX_CANDIDATES_LOCAL : MAX_CANDIDATES_CLOUD;
   const candidateSymbols = await buildCandidateUniverse(heldSymbols, maxCandidates);
   const infoBySymbol = await gatherCandidateInfo(candidateSymbols);
 
-  const holdingsForPrompt = positions
+  const heldValue = positions.reduce((sum, p) => sum + p.quantity * (infoBySymbol.get(p.symbol)?.price ?? p.avgCost), 0);
+  const totalPortfolioValue = cash + heldValue;
+
+  const holdingsForPrompt: HoldingInfo[] = positions
     .map((p) => {
       const info = infoBySymbol.get(p.symbol);
-      return info ? { symbol: p.symbol, quantity: p.quantity, avgCost: p.avgCost, currentPrice: info.price } : null;
+      if (!info) return null;
+      const weightPercent = totalPortfolioValue > 0 ? ((p.quantity * info.price) / totalPortfolioValue) * 100 : 0;
+      return { ...info, quantity: p.quantity, avgCost: p.avgCost, weightPercent };
     })
-    .filter((h): h is NonNullable<typeof h> => h !== null);
+    .filter((h): h is HoldingInfo => h !== null);
 
-  const candidateList = Array.from(infoBySymbol.values());
-  if (candidateList.length === 0) {
+  const buyCandidates = Array.from(infoBySymbol.values()).filter(
+    (c) => !heldSymbols.includes(c.symbol) && riskConfig.allowedBuySignals.includes(c.signalScore)
+  );
+
+  if (holdingsForPrompt.length === 0 && buyCandidates.length === 0) {
     return logAiDecisionRound(profileId, 'No market data available this round — skipped.', null, []);
   }
 
-  const prompt = buildPrompt(cash, holdingsForPrompt, candidateList);
+  const prompt = buildPrompt(
+    profile.riskLevel,
+    profile.startingCash,
+    cash,
+    totalPortfolioValue,
+    holdingsForPrompt,
+    buyCandidates,
+    riskConfig.maxActions,
+    riskConfig.maxPositionPercent
+  );
 
   let rawResponse: string;
   try {
@@ -182,12 +286,13 @@ export async function runAiTradingRound(profileId: number): Promise<AiDecisionRo
     return logAiDecisionRound(profileId, `AI response could not be parsed: ${(e as Error).message}`, rawResponse, []);
   }
 
-  const proposedActions = Array.isArray(parsed.actions) ? parsed.actions.slice(0, MAX_ACTIONS_PER_ROUND) : [];
+  const proposedActions = Array.isArray(parsed.actions) ? parsed.actions.slice(0, riskConfig.maxActions) : [];
   const summary = typeof parsed.summary === 'string' && parsed.summary.trim() ? parsed.summary.trim() : 'No summary provided.';
 
   // Validate + execute sequentially against a running simulated ledger so a multi-action round can't overspend.
   let runningCash = cash;
   const runningHoldings = new Map(positions.map((p) => [p.symbol, p.quantity]));
+  const positionCap = (riskConfig.maxPositionPercent / 100) * totalPortfolioValue;
   const results: AiTradeAction[] = [];
 
   for (const entry of proposedActions as Record<string, unknown>[]) {
@@ -213,9 +318,17 @@ export async function runAiTradingRound(profileId: number): Promise<AiDecisionRo
       fail('Quantity must be a positive whole number.');
       continue;
     }
+    if (action === 'BUY' && !heldSymbols.includes(symbol) && !riskConfig.allowedBuySignals.includes(info.signalScore)) {
+      fail(`${symbol}'s ${info.signalScore} signal isn't allowed for new buys at ${profile.riskLevel} risk.`);
+      continue;
+    }
 
     if (action === 'BUY') {
       const cost = quantity * info.price;
+      if (cost > positionCap) {
+        fail(`Cost $${cost.toFixed(2)} exceeds the ${riskConfig.maxPositionPercent}% position-size cap ($${positionCap.toFixed(2)}) for ${profile.riskLevel} risk.`);
+        continue;
+      }
       if (cost > runningCash) {
         fail(`Cost $${cost.toFixed(2)} exceeds remaining cash $${runningCash.toFixed(2)}.`);
         continue;

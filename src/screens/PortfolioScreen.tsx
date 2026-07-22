@@ -266,6 +266,9 @@ export function PortfolioScreen({ navigation }: Props) {
               <View style={styles.sectionHeader}>
                 <Ionicons name="sparkles" size={16} color={colors.accent} />
                 <Text style={styles.sectionTitle}>AI Trader</Text>
+                <View style={styles.aiRiskBadge}>
+                  <Text style={styles.aiRiskBadgeText}>{profile.riskLevel} RISK</Text>
+                </View>
               </View>
               <Text style={styles.aiHint}>
                 This save trades on its own on the interval below while this screen is open, using your active AI
@@ -501,6 +504,8 @@ function createStyles(colors: ThemeColors) {
     summaryValue: { fontSize: 28, fontWeight: '700', marginTop: 4, color: colors.text },
     summarySub: { marginTop: 6, color: colors.textSecondary },
     aiCard: { backgroundColor: colors.card, borderRadius: 12, padding: 16, marginBottom: 16 },
+    aiRiskBadge: { backgroundColor: colors.chipBackground, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 },
+    aiRiskBadgeText: { color: colors.text, fontSize: 10, fontWeight: '700', includeFontPadding: false },
     aiHint: { color: colors.textSecondary, fontSize: 12, lineHeight: 17, marginBottom: 10 },
     aiIntervalRow: { flexDirection: 'row', gap: 6, marginBottom: 10 },
     aiIntervalChip: {

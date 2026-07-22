@@ -1,5 +1,5 @@
 import * as SQLite from 'expo-sqlite';
-import type { AiDecisionRound, AiTradeAction, Alert, AlertType, Position, Profile, SignalScore, Trade, TradeMode, TradeSide, WatchlistItem } from '../types';
+import type { AiDecisionRound, AiRiskLevel, AiTradeAction, Alert, AlertType, Position, Profile, SignalScore, Trade, TradeMode, TradeSide, WatchlistItem } from '../types';
 
 export const DEFAULT_STARTING_CASH = 100_000;
 const ACTIVE_PROFILE_KEY = 'active_profile_id';
@@ -71,6 +71,7 @@ function getDb(): Promise<SQLite.SQLiteDatabase> {
 
       await migrateFromLegacySingleProfileSchema(db);
       await migrateAddAiManagedColumn(db);
+      await migrateAddRiskLevelColumn(db);
 
       const { count } = (await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM profiles')) ?? { count: 0 };
       if (count === 0) {
@@ -152,16 +153,25 @@ async function migrateAddAiManagedColumn(db: SQLite.SQLiteDatabase): Promise<voi
   }
 }
 
+/** Upgrades installs from before the AI Trader's risk setting existed. */
+async function migrateAddRiskLevelColumn(db: SQLite.SQLiteDatabase): Promise<void> {
+  const columns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(profiles)');
+  if (!columns.some((c) => c.name === 'risk_level')) {
+    await db.execAsync("ALTER TABLE profiles ADD COLUMN risk_level TEXT NOT NULL DEFAULT 'MODERATE'");
+  }
+}
+
 async function insertProfile(
   db: SQLite.SQLiteDatabase,
   name: string,
   startingCash: number,
   cashBalance = startingCash,
-  isAiManaged = false
+  isAiManaged = false,
+  riskLevel: AiRiskLevel = 'MODERATE'
 ): Promise<number> {
   const result = await db.runAsync(
-    'INSERT INTO profiles (name, starting_cash, cash_balance, created_at, is_ai_managed) VALUES (?, ?, ?, ?, ?)',
-    name, startingCash, cashBalance, Date.now(), isAiManaged ? 1 : 0
+    'INSERT INTO profiles (name, starting_cash, cash_balance, created_at, is_ai_managed, risk_level) VALUES (?, ?, ?, ?, ?, ?)',
+    name, startingCash, cashBalance, Date.now(), isAiManaged ? 1 : 0, riskLevel
   );
   return result.lastInsertRowId;
 }
@@ -175,24 +185,43 @@ async function setActiveProfileIdOnDb(db: SQLite.SQLiteDatabase, profileId: numb
 
 // --- Profiles (paper trading "saves") ---
 
-export async function getProfiles(): Promise<Profile[]> {
-  const db = await getDb();
-  const rows = await db.getAllAsync<{
-    id: number;
-    name: string;
-    starting_cash: number;
-    cash_balance: number;
-    created_at: number;
-    is_ai_managed: number;
-  }>('SELECT id, name, starting_cash, cash_balance, created_at, is_ai_managed FROM profiles ORDER BY created_at ASC');
-  return rows.map((r) => ({
+type ProfileRow = {
+  id: number;
+  name: string;
+  starting_cash: number;
+  cash_balance: number;
+  created_at: number;
+  is_ai_managed: number;
+  risk_level: AiRiskLevel;
+};
+
+function mapProfileRow(r: ProfileRow): Profile {
+  return {
     id: r.id,
     name: r.name,
     startingCash: r.starting_cash,
     cashBalance: r.cash_balance,
     createdAt: r.created_at,
     isAiManaged: !!r.is_ai_managed,
-  }));
+    riskLevel: r.risk_level,
+  };
+}
+
+export async function getProfiles(): Promise<Profile[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<ProfileRow>(
+    'SELECT id, name, starting_cash, cash_balance, created_at, is_ai_managed, risk_level FROM profiles ORDER BY created_at ASC'
+  );
+  return rows.map(mapProfileRow);
+}
+
+export async function getProfileById(profileId: number): Promise<Profile | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<ProfileRow>(
+    'SELECT id, name, starting_cash, cash_balance, created_at, is_ai_managed, risk_level FROM profiles WHERE id = ?',
+    profileId
+  );
+  return row ? mapProfileRow(row) : null;
 }
 
 export async function getActiveProfileId(): Promise<number> {
@@ -219,11 +248,16 @@ export async function setActiveProfileId(profileId: number): Promise<void> {
 }
 
 /** Creates a new paper trading save with its own starting cash, and makes it the active profile. */
-export async function createProfile(name: string, startingCash: number, isAiManaged = false): Promise<Profile> {
+export async function createProfile(
+  name: string,
+  startingCash: number,
+  isAiManaged = false,
+  riskLevel: AiRiskLevel = 'MODERATE'
+): Promise<Profile> {
   const db = await getDb();
-  const id = await insertProfile(db, name.trim() || 'New save', startingCash, startingCash, isAiManaged);
+  const id = await insertProfile(db, name.trim() || 'New save', startingCash, startingCash, isAiManaged, riskLevel);
   await setActiveProfileIdOnDb(db, id);
-  return { id, name: name.trim() || 'New save', startingCash, cashBalance: startingCash, createdAt: Date.now(), isAiManaged };
+  return { id, name: name.trim() || 'New save', startingCash, cashBalance: startingCash, createdAt: Date.now(), isAiManaged, riskLevel };
 }
 
 export async function deleteProfile(profileId: number): Promise<void> {

@@ -57,6 +57,8 @@ export type Alert = {
   triggeredAt: number | null;
 };
 
+export type AiRiskLevel = 'LOW' | 'MODERATE' | 'HIGH';
+
 export type Profile = {
   id: number;
   name: string;
@@ -64,6 +66,7 @@ export type Profile = {
   cashBalance: number;
   createdAt: number;
   isAiManaged: boolean;
+  riskLevel: AiRiskLevel;
 };
 
 export type Position = {

@@ -7,7 +7,13 @@ import type { PortfolioStackParamList } from '../navigation/types';
 import { createProfile, deleteProfile, getActiveProfileId, getProfiles, setActiveProfileId, DEFAULT_STARTING_CASH } from '../db/database';
 import { useTheme } from '../theme/ThemeContext';
 import type { ThemeColors } from '../theme/theme';
-import type { Profile } from '../types';
+import type { AiRiskLevel, Profile } from '../types';
+
+const RISK_LEVELS: { level: AiRiskLevel; label: string; hint: string }[] = [
+  { level: 'LOW', label: 'Low', hint: 'Smaller positions, only acts on BUY-or-better signals.' },
+  { level: 'MODERATE', label: 'Moderate', hint: 'Balanced position sizes, some room to act on HOLD too.' },
+  { level: 'HIGH', label: 'High', hint: 'Larger, concentrated positions; can chase momentum or contrarian plays.' },
+];
 
 type Props = NativeStackScreenProps<PortfolioStackParamList, 'Profiles'>;
 
@@ -21,6 +27,7 @@ export function ProfilesScreen({ navigation }: Props) {
   const [newName, setNewName] = useState('');
   const [newStartingCash, setNewStartingCash] = useState(String(DEFAULT_STARTING_CASH));
   const [newIsAiManaged, setNewIsAiManaged] = useState(false);
+  const [newRiskLevel, setNewRiskLevel] = useState<AiRiskLevel>('MODERATE');
   const [formError, setFormError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -55,10 +62,11 @@ export function ProfilesScreen({ navigation }: Props) {
     setFormError(null);
     setCreating(true);
     try {
-      const profile = await createProfile(newName.trim(), cash, newIsAiManaged);
+      const profile = await createProfile(newName.trim(), cash, newIsAiManaged, newRiskLevel);
       setNewName('');
       setNewStartingCash(String(DEFAULT_STARTING_CASH));
       setNewIsAiManaged(false);
+      setNewRiskLevel('MODERATE');
       await load();
       setActiveId(profile.id);
       navigation.goBack();
@@ -118,7 +126,7 @@ export function ProfilesScreen({ navigation }: Props) {
               {item.isAiManaged && (
                 <View style={styles.aiBadge}>
                   <Ionicons name="sparkles" size={10} color="#fff" />
-                  <Text style={styles.aiBadgeText}>AI</Text>
+                  <Text style={styles.aiBadgeText}>AI · {item.riskLevel}</Text>
                 </View>
               )}
             </View>
@@ -171,6 +179,25 @@ export function ProfilesScreen({ navigation }: Props) {
             </View>
             <Switch value={newIsAiManaged} onValueChange={setNewIsAiManaged} />
           </View>
+          {newIsAiManaged && (
+            <View style={styles.riskSection}>
+              <Text style={styles.riskSectionLabel}>Risk setting</Text>
+              <View style={styles.riskRow}>
+                {RISK_LEVELS.map((r) => (
+                  <Pressable
+                    key={r.level}
+                    style={[styles.riskChip, newRiskLevel === r.level && styles.riskChipSelected]}
+                    onPress={() => setNewRiskLevel(r.level)}
+                  >
+                    <Text style={[styles.riskChipText, newRiskLevel === r.level && styles.riskChipTextSelected]}>
+                      {r.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Text style={styles.aiToggleHint}>{RISK_LEVELS.find((r) => r.level === newRiskLevel)!.hint}</Text>
+            </View>
+          )}
           {formError && <Text style={styles.error}>{formError}</Text>}
           <Pressable style={styles.createButton} onPress={handleCreate} disabled={creating}>
             {creating ? (
@@ -220,6 +247,13 @@ function createStyles(colors: ThemeColors) {
     aiToggleRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
     aiToggleLabel: { color: colors.text, fontWeight: '600' },
     aiToggleHint: { color: colors.textMuted, fontSize: 11, marginTop: 3, lineHeight: 15 },
+    riskSection: { marginBottom: 10 },
+    riskSectionLabel: { color: colors.text, fontWeight: '600', marginBottom: 6 },
+    riskRow: { flexDirection: 'row', gap: 8, marginBottom: 6 },
+    riskChip: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 8, backgroundColor: colors.chipBackground },
+    riskChipSelected: { backgroundColor: colors.accent },
+    riskChipText: { color: colors.text, fontWeight: '600', fontSize: 12, includeFontPadding: false },
+    riskChipTextSelected: { color: '#fff' },
     input: {
       borderWidth: 1,
       borderColor: colors.border,
