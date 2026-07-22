@@ -63,6 +63,7 @@ export type Profile = {
   startingCash: number;
   cashBalance: number;
   createdAt: number;
+  isAiManaged: boolean;
 };
 
 export type Position = {
@@ -85,3 +86,20 @@ export type Trade = {
 };
 
 export type TradingMode = 'PAPER' | 'LIVE';
+
+export type AiTradeAction = {
+  action: TradeSide;
+  symbol: string;
+  quantity: number;
+  reasoning: string;
+  executed: boolean;
+  error?: string;
+};
+
+export type AiDecisionRound = {
+  id: number;
+  profileId: number;
+  timestamp: number;
+  summary: string;
+  actions: AiTradeAction[];
+};

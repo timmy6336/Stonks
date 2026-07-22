@@ -5,7 +5,15 @@ import { LineChart } from 'react-native-chart-kit';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { PortfolioStackParamList } from '../navigation/types';
-import { getActiveProfile, getAppStateValue, getPositions, getTrades, resetPaperAccount, setAppStateValue } from '../db/database';
+import {
+  getActiveProfile,
+  getAiDecisionLog,
+  getAppStateValue,
+  getPositions,
+  getTrades,
+  resetPaperAccount,
+  setAppStateValue,
+} from '../db/database';
 import { fetchQuote } from '../api/marketData';
 import {
   computePortfolioPerformance,
@@ -13,10 +21,11 @@ import {
   type PerformanceWindow,
   type PortfolioPerformance,
 } from '../portfolio/portfolioHistory';
+import { runAiTradingRound } from '../ai/aiTrader';
 import { STOCK_CATEGORIES } from '../data/categories';
 import { useTheme } from '../theme/ThemeContext';
 import { hexToRgba, type ThemeColors } from '../theme/theme';
-import type { Position, Profile, Trade } from '../types';
+import type { AiDecisionRound, Position, Profile, Trade } from '../types';
 
 const CATEGORY_COLORS = ['#0a7d32', '#3fa34d', '#7cb342', '#d9822b', '#c0392b', '#8e44ad', '#2980b9', '#16a085', '#999'];
 
@@ -59,6 +68,8 @@ export function PortfolioScreen({ navigation }: Props) {
   const [performanceLoading, setPerformanceLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [chartWindow, setChartWindowState] = useState<PerformanceWindow>('WEEKLY');
+  const [aiLog, setAiLog] = useState<AiDecisionRound[]>([]);
+  const [aiRunning, setAiRunning] = useState(false);
 
   useEffect(() => {
     getAppStateValue(CHART_WINDOW_KEY).then((saved) => {
@@ -84,6 +95,7 @@ export function PortfolioScreen({ navigation }: Props) {
     setProfile(activeProfile);
     setTrades(tradeHistory);
     setPositions(pos);
+    setAiLog(activeProfile.isAiManaged ? await getAiDecisionLog(activeProfile.id, 10) : []);
     setLoading(false);
 
     const priceBySymbol: Record<string, number> = {};
@@ -126,6 +138,28 @@ export function PortfolioScreen({ navigation }: Props) {
     await load();
     setRefreshing(false);
   };
+
+  const handleRunAiRound = useCallback(
+    async (profileId: number) => {
+      setAiRunning(true);
+      try {
+        await runAiTradingRound(profileId);
+      } finally {
+        setAiRunning(false);
+        await load();
+      }
+    },
+    [load]
+  );
+
+  // Auto-run once per calendar day for AI-managed saves, so the experiment progresses even with light usage.
+  useEffect(() => {
+    if (loading || aiRunning || !profile?.isAiManaged) return;
+    const lastRunDay = aiLog[0] ? new Date(aiLog[0].timestamp).toDateString() : null;
+    if (lastRunDay !== new Date().toDateString()) {
+      handleRunAiRound(profile.id);
+    }
+  }, [loading, aiRunning, profile, aiLog, handleRunAiRound]);
 
   const cash = profile?.cashBalance ?? 0;
   const marketValue = positions.reduce((sum, p) => sum + (p.currentPrice ?? p.avgCost) * p.quantity, 0);
@@ -190,6 +224,66 @@ export function PortfolioScreen({ navigation }: Props) {
             <Text style={styles.summaryValue}>${totalValue.toFixed(2)}</Text>
             <Text style={styles.summarySub}>Cash: ${cash.toFixed(2)}   Invested: ${marketValue.toFixed(2)}</Text>
           </View>
+
+          {profile?.isAiManaged && (
+            <View style={styles.aiCard}>
+              <View style={styles.sectionHeader}>
+                <Ionicons name="sparkles" size={16} color={colors.accent} />
+                <Text style={styles.sectionTitle}>AI Trader</Text>
+              </View>
+              <Text style={styles.aiHint}>
+                This save trades on its own once a day using your active AI provider — no manual buy/sell. An
+                experiment: watch the log below to see how it does.
+              </Text>
+              <Pressable
+                style={styles.aiRunButton}
+                onPress={() => profile && handleRunAiRound(profile.id)}
+                disabled={aiRunning}
+              >
+                {aiRunning ? (
+                  <>
+                    <ActivityIndicator color="#fff" size="small" />
+                    <Text style={styles.aiRunButtonText}>Thinking…</Text>
+                  </>
+                ) : (
+                  <>
+                    <Ionicons name="play" size={16} color="#fff" />
+                    <Text style={styles.aiRunButtonText}>Run AI round now</Text>
+                  </>
+                )}
+              </Pressable>
+              {aiLog.length === 0 ? (
+                <Text style={styles.aiEmptyText}>No rounds run yet.</Text>
+              ) : (
+                aiLog.slice(0, 5).map((round) => (
+                  <View key={round.id} style={styles.aiRound}>
+                    <Text style={styles.aiRoundDate}>{new Date(round.timestamp).toLocaleString()}</Text>
+                    <Text style={styles.aiRoundSummary}>{round.summary}</Text>
+                    {round.actions.length === 0 ? (
+                      <Text style={styles.aiActionNone}>No trades this round.</Text>
+                    ) : (
+                      round.actions.map((a, i) => (
+                        <View key={i} style={styles.aiActionRow}>
+                          <Ionicons
+                            name={a.action === 'BUY' ? 'arrow-up-circle' : 'arrow-down-circle'}
+                            size={14}
+                            color={a.executed ? (a.action === 'BUY' ? colors.accent : colors.danger) : colors.textMuted}
+                          />
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.aiActionText}>
+                              {a.action} {a.quantity} {a.symbol}
+                              {!a.executed ? ' — skipped' : ''}
+                            </Text>
+                            <Text style={styles.aiActionReason}>{a.executed ? a.reasoning : a.error ?? a.reasoning}</Text>
+                          </View>
+                        </View>
+                      ))
+                    )}
+                  </View>
+                ))
+              )}
+            </View>
+          )}
 
           <View style={styles.sectionHeader}>
             <Ionicons name="stats-chart" size={16} color={colors.accent} />
@@ -351,6 +445,27 @@ function createStyles(colors: ThemeColors) {
     summaryLabel: { color: colors.textSecondary },
     summaryValue: { fontSize: 28, fontWeight: '700', marginTop: 4, color: colors.text },
     summarySub: { marginTop: 6, color: colors.textSecondary },
+    aiCard: { backgroundColor: colors.card, borderRadius: 12, padding: 16, marginBottom: 16 },
+    aiHint: { color: colors.textSecondary, fontSize: 12, lineHeight: 17, marginBottom: 10 },
+    aiRunButton: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      alignItems: 'center',
+      gap: 6,
+      backgroundColor: colors.accent,
+      borderRadius: 8,
+      paddingVertical: 10,
+      marginBottom: 10,
+    },
+    aiRunButtonText: { color: '#fff', fontWeight: '700', includeFontPadding: false },
+    aiEmptyText: { color: colors.textMuted, fontSize: 12 },
+    aiRound: { paddingVertical: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+    aiRoundDate: { color: colors.textMuted, fontSize: 11 },
+    aiRoundSummary: { color: colors.text, fontSize: 13, marginTop: 3, marginBottom: 6 },
+    aiActionNone: { color: colors.textMuted, fontSize: 12, fontStyle: 'italic' },
+    aiActionRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: 4 },
+    aiActionText: { color: colors.text, fontWeight: '600', fontSize: 13 },
+    aiActionReason: { color: colors.textMuted, fontSize: 11, marginTop: 1 },
     sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8, marginBottom: 8 },
     sectionTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
     row: {

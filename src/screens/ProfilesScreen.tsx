@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -20,6 +20,7 @@ export function ProfilesScreen({ navigation }: Props) {
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [newStartingCash, setNewStartingCash] = useState(String(DEFAULT_STARTING_CASH));
+  const [newIsAiManaged, setNewIsAiManaged] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -54,9 +55,10 @@ export function ProfilesScreen({ navigation }: Props) {
     setFormError(null);
     setCreating(true);
     try {
-      const profile = await createProfile(newName.trim(), cash);
+      const profile = await createProfile(newName.trim(), cash, newIsAiManaged);
       setNewName('');
       setNewStartingCash(String(DEFAULT_STARTING_CASH));
+      setNewIsAiManaged(false);
       await load();
       setActiveId(profile.id);
       navigation.goBack();
@@ -111,7 +113,15 @@ export function ProfilesScreen({ navigation }: Props) {
             color={item.id === activeId ? colors.accent : colors.border}
           />
           <View style={{ flex: 1 }}>
-            <Text style={styles.name}>{item.name}</Text>
+            <View style={styles.nameRow}>
+              <Text style={styles.name}>{item.name}</Text>
+              {item.isAiManaged && (
+                <View style={styles.aiBadge}>
+                  <Ionicons name="sparkles" size={10} color="#fff" />
+                  <Text style={styles.aiBadgeText}>AI</Text>
+                </View>
+              )}
+            </View>
             <Text style={styles.sub}>
               ${item.cashBalance.toFixed(2)} cash · started with ${item.startingCash.toFixed(2)}
             </Text>
@@ -148,6 +158,19 @@ export function ProfilesScreen({ navigation }: Props) {
             value={newStartingCash}
             onChangeText={setNewStartingCash}
           />
+          <View style={styles.aiToggleRow}>
+            <View style={{ flex: 1 }}>
+              <View style={styles.nameRow}>
+                <Ionicons name="sparkles" size={14} color={colors.accent} />
+                <Text style={styles.aiToggleLabel}>AI-managed save</Text>
+              </View>
+              <Text style={styles.aiToggleHint}>
+                The AI decides what to buy and sell on its own from your watchlist and curated categories — no manual
+                trading on this save. An experiment to see how it performs.
+              </Text>
+            </View>
+            <Switch value={newIsAiManaged} onValueChange={setNewIsAiManaged} />
+          </View>
           {formError && <Text style={styles.error}>{formError}</Text>}
           <Pressable style={styles.createButton} onPress={handleCreate} disabled={creating}>
             {creating ? (
@@ -181,8 +204,22 @@ function createStyles(colors: ThemeColors) {
       borderBottomColor: colors.border,
     },
     name: { fontWeight: '700', fontSize: 15, color: colors.text },
+    nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    aiBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 3,
+      backgroundColor: colors.accent,
+      borderRadius: 8,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+    },
+    aiBadgeText: { color: '#fff', fontSize: 10, fontWeight: '700', includeFontPadding: false },
     sub: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
     card: { backgroundColor: colors.card, borderRadius: 12, padding: 16, marginTop: 20 },
+    aiToggleRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+    aiToggleLabel: { color: colors.text, fontWeight: '600' },
+    aiToggleHint: { color: colors.textMuted, fontSize: 11, marginTop: 3, lineHeight: 15 },
     input: {
       borderWidth: 1,
       borderColor: colors.border,

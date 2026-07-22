@@ -23,7 +23,7 @@ import { runSignalBacktest, type BacktestResult } from '../backtest/backtestEngi
 import { generateInsight, hasAnyApiKey } from '../llm/llmClient';
 import { checkAlertsForSymbol, requestNotificationPermission } from '../notifications/alertEngine';
 import { executeTrade, getActiveTradingMode } from '../trading/tradingService';
-import { createAlert, getPosition, logSignalIfNew } from '../db/database';
+import { createAlert, getActiveProfile, getPosition, logSignalIfNew } from '../db/database';
 import { useTheme } from '../theme/ThemeContext';
 import { hexToRgba, type ThemeColors } from '../theme/theme';
 import { hapticSuccess } from '../haptics/haptics';
@@ -88,6 +88,7 @@ export function StockDetailScreen({ route }: Props) {
   const [alertThreshold, setAlertThreshold] = useState('');
   const [alertError, setAlertError] = useState<string | null>(null);
   const [alertSaved, setAlertSaved] = useState(false);
+  const [isAiManagedSave, setIsAiManagedSave] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -95,11 +96,12 @@ export function StockDetailScreen({ route }: Props) {
     setAiInsight(null);
     setAiError(null);
     try {
-      const [q, history, pos, activeMode] = await Promise.all([
+      const [q, history, pos, activeMode, activeSave] = await Promise.all([
         fetchQuote(symbol),
         fetchHistory(symbol, '6mo', '1d'),
         getPosition(symbol),
         getActiveTradingMode(),
+        getActiveProfile(),
       ]);
       const sig = computeSignal(symbol, history);
       logSignalIfNew(symbol, sig.score, sig.points, q.price).catch(() => {}); // best-effort track record logging
@@ -110,6 +112,7 @@ export function StockDetailScreen({ route }: Props) {
       setBacktest(runSignalBacktest(symbol, history));
       setPosition(pos);
       setMode(activeMode);
+      setIsAiManagedSave(activeMode === 'PAPER' && activeSave.isAiManaged);
       checkAlertsForSymbol(symbol, q, sig).catch(() => {}); // alerts are best-effort; never block the screen on them
     } catch (e) {
       setError((e as Error).message);
@@ -469,16 +472,25 @@ export function StockDetailScreen({ route }: Props) {
         <Text style={styles.modeLabel}>Mode: {mode === 'LIVE' ? 'LIVE (real money)' : 'Paper (simulated)'}</Text>
       </View>
 
-      <View style={styles.actionRow}>
-        <Pressable style={[styles.actionButton, styles.buy]} onPress={() => openTrade('BUY')}>
-          <Ionicons name="arrow-up-circle" size={18} color="#fff" />
-          <Text style={styles.actionText}>Buy</Text>
-        </Pressable>
-        <Pressable style={[styles.actionButton, styles.sell]} onPress={() => openTrade('SELL')}>
-          <Ionicons name="arrow-down-circle" size={18} color="#fff" />
-          <Text style={styles.actionText}>Sell</Text>
-        </Pressable>
-      </View>
+      {isAiManagedSave ? (
+        <View style={styles.aiManagedNotice}>
+          <Ionicons name="sparkles" size={16} color={colors.accent} />
+          <Text style={styles.aiManagedNoticeText}>
+            This save is AI-managed — it trades on its own from the Portfolio tab, no manual buy/sell here.
+          </Text>
+        </View>
+      ) : (
+        <View style={styles.actionRow}>
+          <Pressable style={[styles.actionButton, styles.buy]} onPress={() => openTrade('BUY')}>
+            <Ionicons name="arrow-up-circle" size={18} color="#fff" />
+            <Text style={styles.actionText}>Buy</Text>
+          </Pressable>
+          <Pressable style={[styles.actionButton, styles.sell]} onPress={() => openTrade('SELL')}>
+            <Ionicons name="arrow-down-circle" size={18} color="#fff" />
+            <Text style={styles.actionText}>Sell</Text>
+          </Pressable>
+        </View>
+      )}
 
       <Pressable style={styles.alertButton} onPress={openAlertModal}>
         <Ionicons name="notifications-outline" size={16} color={colors.accent} />
@@ -628,6 +640,16 @@ function createStyles(colors: ThemeColors) {
     },
     modeRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16 },
     modeLabel: { color: colors.textSecondary, fontStyle: 'italic' },
+    aiManagedNotice: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      backgroundColor: colors.card,
+      borderRadius: 8,
+      padding: 12,
+      marginTop: 12,
+    },
+    aiManagedNoticeText: { flex: 1, color: colors.textSecondary, fontSize: 12, lineHeight: 17 },
     actionRow: { flexDirection: 'row', gap: 12, marginTop: 12 },
     actionButton: {
       flex: 1,

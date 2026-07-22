@@ -1,5 +1,5 @@
 import * as SQLite from 'expo-sqlite';
-import type { Alert, AlertType, Position, Profile, SignalScore, Trade, TradeMode, TradeSide, WatchlistItem } from '../types';
+import type { AiDecisionRound, AiTradeAction, Alert, AlertType, Position, Profile, SignalScore, Trade, TradeMode, TradeSide, WatchlistItem } from '../types';
 
 export const DEFAULT_STARTING_CASH = 100_000;
 const ACTIVE_PROFILE_KEY = 'active_profile_id';
@@ -59,9 +59,18 @@ function getDb(): Promise<SQLite.SQLiteDatabase> {
           price REAL NOT NULL,
           logged_at INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS ai_decisions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          profile_id INTEGER NOT NULL,
+          timestamp INTEGER NOT NULL,
+          summary TEXT NOT NULL,
+          raw_response TEXT,
+          actions_json TEXT NOT NULL
+        );
       `);
 
       await migrateFromLegacySingleProfileSchema(db);
+      await migrateAddAiManagedColumn(db);
 
       const { count } = (await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM profiles')) ?? { count: 0 };
       if (count === 0) {
@@ -135,10 +144,24 @@ async function migrateFromLegacySingleProfileSchema(db: SQLite.SQLiteDatabase): 
   });
 }
 
-async function insertProfile(db: SQLite.SQLiteDatabase, name: string, startingCash: number, cashBalance = startingCash): Promise<number> {
+/** Upgrades installs from before AI-managed saves existed, which had no is_ai_managed column. */
+async function migrateAddAiManagedColumn(db: SQLite.SQLiteDatabase): Promise<void> {
+  const columns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(profiles)');
+  if (!columns.some((c) => c.name === 'is_ai_managed')) {
+    await db.execAsync('ALTER TABLE profiles ADD COLUMN is_ai_managed INTEGER NOT NULL DEFAULT 0');
+  }
+}
+
+async function insertProfile(
+  db: SQLite.SQLiteDatabase,
+  name: string,
+  startingCash: number,
+  cashBalance = startingCash,
+  isAiManaged = false
+): Promise<number> {
   const result = await db.runAsync(
-    'INSERT INTO profiles (name, starting_cash, cash_balance, created_at) VALUES (?, ?, ?, ?)',
-    name, startingCash, cashBalance, Date.now()
+    'INSERT INTO profiles (name, starting_cash, cash_balance, created_at, is_ai_managed) VALUES (?, ?, ?, ?, ?)',
+    name, startingCash, cashBalance, Date.now(), isAiManaged ? 1 : 0
   );
   return result.lastInsertRowId;
 }
@@ -154,15 +177,21 @@ async function setActiveProfileIdOnDb(db: SQLite.SQLiteDatabase, profileId: numb
 
 export async function getProfiles(): Promise<Profile[]> {
   const db = await getDb();
-  const rows = await db.getAllAsync<{ id: number; name: string; starting_cash: number; cash_balance: number; created_at: number }>(
-    'SELECT id, name, starting_cash, cash_balance, created_at FROM profiles ORDER BY created_at ASC'
-  );
+  const rows = await db.getAllAsync<{
+    id: number;
+    name: string;
+    starting_cash: number;
+    cash_balance: number;
+    created_at: number;
+    is_ai_managed: number;
+  }>('SELECT id, name, starting_cash, cash_balance, created_at, is_ai_managed FROM profiles ORDER BY created_at ASC');
   return rows.map((r) => ({
     id: r.id,
     name: r.name,
     startingCash: r.starting_cash,
     cashBalance: r.cash_balance,
     createdAt: r.created_at,
+    isAiManaged: !!r.is_ai_managed,
   }));
 }
 
@@ -190,11 +219,11 @@ export async function setActiveProfileId(profileId: number): Promise<void> {
 }
 
 /** Creates a new paper trading save with its own starting cash, and makes it the active profile. */
-export async function createProfile(name: string, startingCash: number): Promise<Profile> {
+export async function createProfile(name: string, startingCash: number, isAiManaged = false): Promise<Profile> {
   const db = await getDb();
-  const id = await insertProfile(db, name.trim() || 'New save', startingCash);
+  const id = await insertProfile(db, name.trim() || 'New save', startingCash, startingCash, isAiManaged);
   await setActiveProfileIdOnDb(db, id);
-  return { id, name: name.trim() || 'New save', startingCash, cashBalance: startingCash, createdAt: Date.now() };
+  return { id, name: name.trim() || 'New save', startingCash, cashBalance: startingCash, createdAt: Date.now(), isAiManaged };
 }
 
 export async function deleteProfile(profileId: number): Promise<void> {
@@ -469,5 +498,38 @@ export async function getSignalLog(limit = 500): Promise<SignalLogEntry[]> {
     points: r.points,
     price: r.price,
     loggedAt: r.logged_at,
+  }));
+}
+
+// --- AI-managed saves: logs each autonomous trading round for transparency/review ---
+
+export async function logAiDecisionRound(
+  profileId: number,
+  summary: string,
+  rawResponse: string | null,
+  actions: AiTradeAction[]
+): Promise<AiDecisionRound> {
+  const db = await getDb();
+  const timestamp = Date.now();
+  const actionsJson = JSON.stringify(actions);
+  const result = await db.runAsync(
+    'INSERT INTO ai_decisions (profile_id, timestamp, summary, raw_response, actions_json) VALUES (?, ?, ?, ?, ?)',
+    profileId, timestamp, summary, rawResponse, actionsJson
+  );
+  return { id: result.lastInsertRowId, profileId, timestamp, summary, actions };
+}
+
+export async function getAiDecisionLog(profileId: number, limit = 20): Promise<AiDecisionRound[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<any>(
+    'SELECT * FROM ai_decisions WHERE profile_id = ? ORDER BY timestamp DESC LIMIT ?',
+    profileId, limit
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    profileId: r.profile_id,
+    timestamp: r.timestamp,
+    summary: r.summary,
+    actions: JSON.parse(r.actions_json) as AiTradeAction[],
   }));
 }
