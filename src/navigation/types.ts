@@ -1,3 +1,5 @@
+import type { AiDecisionRound } from '../types';
+
 export type StockDetailParams = { symbol: string };
 
 export type WatchlistStackParamList = {
@@ -15,6 +17,7 @@ export type TrendingStackParamList = {
 export type PortfolioStackParamList = {
   Portfolio: undefined;
   Profiles: undefined;
+  AiDecisionDetail: { round: AiDecisionRound; profileName: string; riskLevel: string };
 };
 
 export type SettingsStackParamList = {

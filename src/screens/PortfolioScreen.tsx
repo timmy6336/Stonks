@@ -314,8 +314,22 @@ export function PortfolioScreen({ navigation }: Props) {
                 <Text style={styles.aiEmptyText}>No rounds run yet.</Text>
               ) : (
                 aiLog.slice(0, 5).map((round) => (
-                  <View key={round.id} style={styles.aiRound}>
-                    <Text style={styles.aiRoundDate}>{new Date(round.timestamp).toLocaleString()}</Text>
+                  <Pressable
+                    key={round.id}
+                    style={styles.aiRound}
+                    onPress={() =>
+                      profile &&
+                      navigation.navigate('AiDecisionDetail', {
+                        round,
+                        profileName: profile.name,
+                        riskLevel: profile.riskLevel,
+                      })
+                    }
+                  >
+                    <View style={styles.aiRoundHeaderRow}>
+                      <Text style={styles.aiRoundDate}>{new Date(round.timestamp).toLocaleString()}</Text>
+                      <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
+                    </View>
                     <Text style={styles.aiRoundSummary}>{round.summary}</Text>
                     {round.actions.length === 0 ? (
                       <Text style={styles.aiActionNone}>No trades this round.</Text>
@@ -337,7 +351,7 @@ export function PortfolioScreen({ navigation }: Props) {
                         </View>
                       ))
                     )}
-                  </View>
+                  </Pressable>
                 ))
               )}
             </View>
@@ -531,6 +545,7 @@ function createStyles(colors: ThemeColors) {
     aiRunButtonText: { color: '#fff', fontWeight: '700', includeFontPadding: false },
     aiEmptyText: { color: colors.textMuted, fontSize: 12 },
     aiRound: { paddingVertical: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+    aiRoundHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     aiRoundDate: { color: colors.textMuted, fontSize: 11 },
     aiRoundSummary: { color: colors.text, fontSize: 13, marginTop: 3, marginBottom: 6 },
     aiActionNone: { color: colors.textMuted, fontSize: 12, fontStyle: 'italic' },

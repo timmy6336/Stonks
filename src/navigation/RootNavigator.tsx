@@ -11,6 +11,7 @@ import { StockDetailScreen } from '../screens/StockDetailScreen';
 import { AlertsScreen } from '../screens/AlertsScreen';
 import { PortfolioScreen } from '../screens/PortfolioScreen';
 import { ProfilesScreen } from '../screens/ProfilesScreen';
+import { AiDecisionDetailScreen } from '../screens/AiDecisionDetailScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { HowItWorksScreen } from '../screens/HowItWorksScreen';
 import { SignalTrackRecordScreen } from '../screens/SignalTrackRecordScreen';
@@ -92,6 +93,11 @@ function PortfolioStackScreen() {
     <PortfolioStack.Navigator>
       <PortfolioStack.Screen name="Portfolio" component={PortfolioScreen} options={{ title: 'Portfolio' }} />
       <PortfolioStack.Screen name="Profiles" component={ProfilesScreen} options={{ title: 'Saves' }} />
+      <PortfolioStack.Screen
+        name="AiDecisionDetail"
+        component={AiDecisionDetailScreen}
+        options={{ title: 'AI Decision' }}
+      />
     </PortfolioStack.Navigator>
   );
 }

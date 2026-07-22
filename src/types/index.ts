@@ -97,6 +97,7 @@ export type AiTradeAction = {
   reasoning: string;
   executed: boolean;
   error?: string;
+  price?: number;
 };
 
 export type AiDecisionRound = {
@@ -105,4 +106,5 @@ export type AiDecisionRound = {
   timestamp: number;
   summary: string;
   actions: AiTradeAction[];
+  rawResponse: string | null;
 };

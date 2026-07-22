@@ -550,7 +550,7 @@ export async function logAiDecisionRound(
     'INSERT INTO ai_decisions (profile_id, timestamp, summary, raw_response, actions_json) VALUES (?, ?, ?, ?, ?)',
     profileId, timestamp, summary, rawResponse, actionsJson
   );
-  return { id: result.lastInsertRowId, profileId, timestamp, summary, actions };
+  return { id: result.lastInsertRowId, profileId, timestamp, summary, actions, rawResponse };
 }
 
 export async function getAiDecisionLog(profileId: number, limit = 20): Promise<AiDecisionRound[]> {
@@ -565,5 +565,6 @@ export async function getAiDecisionLog(profileId: number, limit = 20): Promise<A
     timestamp: r.timestamp,
     summary: r.summary,
     actions: JSON.parse(r.actions_json) as AiTradeAction[],
+    rawResponse: r.raw_response ?? null,
   }));
 }

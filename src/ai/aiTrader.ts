@@ -303,7 +303,7 @@ export async function runAiTradingRound(profileId: number): Promise<AiDecisionRo
     const info = infoBySymbol.get(symbol);
 
     const fail = (error: string) => {
-      results.push({ action: action || 'BUY', symbol: symbol || '?', quantity: quantity || 0, reasoning, executed: false, error });
+      results.push({ action: action || 'BUY', symbol: symbol || '?', quantity: quantity || 0, reasoning, executed: false, error, price: info?.price });
     };
 
     if (!action) {
@@ -337,7 +337,7 @@ export async function runAiTradingRound(profileId: number): Promise<AiDecisionRo
         await recordPaperTrade(symbol, 'BUY', quantity, info.price, profileId);
         runningCash -= cost;
         runningHoldings.set(symbol, (runningHoldings.get(symbol) ?? 0) + quantity);
-        results.push({ action, symbol, quantity, reasoning, executed: true });
+        results.push({ action, symbol, quantity, reasoning, executed: true, price: info.price });
       } catch (e) {
         fail((e as Error).message);
       }
@@ -351,7 +351,7 @@ export async function runAiTradingRound(profileId: number): Promise<AiDecisionRo
         await recordPaperTrade(symbol, 'SELL', quantity, info.price, profileId);
         runningCash += quantity * info.price;
         runningHoldings.set(symbol, held - quantity);
-        results.push({ action, symbol, quantity, reasoning, executed: true });
+        results.push({ action, symbol, quantity, reasoning, executed: true, price: info.price });
       } catch (e) {
         fail((e as Error).message);
       }
