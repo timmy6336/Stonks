@@ -372,6 +372,22 @@ Rules:
 }
 
 /**
+ * Reads the "action" field leniently: some responses put the symbol in the same field instead of
+ * using "symbol" separately (e.g. `"action": "BUY ARWR"`) — an exact-match check would reject that
+ * outright even though the intent (and the correctly-separate "symbol" field, when present) is
+ * perfectly clear, so this falls back to a substring match before giving up.
+ */
+function parseActionField(raw: unknown): TradeSide | '' {
+  if (raw === 'BUY' || raw === 'SELL') return raw;
+  if (typeof raw === 'string') {
+    const upper = raw.toUpperCase();
+    if (upper.includes('SELL')) return 'SELL';
+    if (upper.includes('BUY')) return 'BUY';
+  }
+  return '';
+}
+
+/**
  * Normalizes one proposed action into a consistent shape. The AI is asked for objects, but some
  * providers (especially smaller/local models) occasionally emit plain strings like "BUY TSLA"
  * instead — rather than discarding those as "unrecognized", pull out the action/symbol/quantity
@@ -380,9 +396,16 @@ Rules:
 function normalizeAction(entry: unknown): { action: TradeSide | ''; symbol: string; quantity: number; reasoning: string } {
   if (entry && typeof entry === 'object') {
     const e = entry as Record<string, unknown>;
+    let symbol = typeof e.symbol === 'string' ? e.symbol.toUpperCase() : '';
+    if (!symbol && typeof e.action === 'string') {
+      // "symbol" was omitted entirely and only encoded inside "action" (e.g. "BUY ARWR") — try
+      // to recover it from there rather than failing the action for a missing field it does have.
+      const symbolMatch = e.action.toUpperCase().replace(/\bBUY\b|\bSELL\b/g, '').match(/[A-Z]{1,6}(?:\.[A-Z]{1,3})?/);
+      if (symbolMatch) symbol = symbolMatch[0];
+    }
     return {
-      action: e.action === 'SELL' ? 'SELL' : e.action === 'BUY' ? 'BUY' : '',
-      symbol: typeof e.symbol === 'string' ? e.symbol.toUpperCase() : '',
+      action: parseActionField(e.action),
+      symbol,
       quantity: Math.floor(Number(e.quantity)),
       reasoning: typeof e.reasoning === 'string' ? e.reasoning.slice(0, 300) : '',
     };
