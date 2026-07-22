@@ -1,0 +1,46 @@
+name: Build Desktop App
+
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: stonks-linux
+            glob: release/*.AppImage
+          - os: windows-latest
+            artifact: stonks-windows
+            glob: release/*.exe
+          - os: macos-latest
+            artifact: stonks-macos
+            glob: release/*.dmg
+    runs-on: ${{ matrix.os }}
+    env:
+      # Unsigned builds are fine for this experiment — skip macOS code-signing lookup so the build
+      # doesn't fail just because there's no Apple Developer certificate configured in CI.
+      CSC_IDENTITY_AUTO_DISCOVERY: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web bundle + desktop installer
+        run: npm run desktop:build
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.glob }}

@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { Alert, Linking, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Alert, Linking, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -330,58 +330,60 @@ export function SettingsScreen({ navigation }: Props) {
         );
       })}
 
-      <View style={styles.providerCard}>
-        <View style={styles.providerHeaderRow}>
-          <Text style={styles.providerName}>{LOCAL_MODEL.name} (on-device)</Text>
-          {activeProviderId === 'local' && (
-            <View style={styles.activeBadge}>
-              <Text style={styles.activeBadgeText}>ACTIVE</Text>
-            </View>
+      {Platform.OS !== 'web' && (
+        <View style={styles.providerCard}>
+          <View style={styles.providerHeaderRow}>
+            <Text style={styles.providerName}>{LOCAL_MODEL.name} (on-device)</Text>
+            {activeProviderId === 'local' && (
+              <View style={styles.activeBadge}>
+                <Text style={styles.activeBadgeText}>ACTIVE</Text>
+              </View>
+            )}
+          </View>
+          <Text style={styles.providerNote}>
+            Runs fully offline on your phone — no API key, no account, nothing ever leaves this device. Experimental:
+            quality and speed are well below the cloud providers above, and the model download is {LOCAL_MODEL.approxSizeLabel}.
+          </Text>
+
+          {localModelDownloaded ? (
+            <>
+              <View style={styles.credentialStatusRow}>
+                <Ionicons name="checkmark-circle" size={14} color={colors.accent} />
+                <Text style={styles.credentialStatus}>Model downloaded and ready on this device.</Text>
+              </View>
+              <View style={styles.providerActionRow}>
+                {activeProviderId !== 'local' && (
+                  <Pressable style={styles.useButton} onPress={() => handleUseProvider('local')}>
+                    <Text style={styles.useButtonText}>Use this</Text>
+                  </Pressable>
+                )}
+                <Pressable style={styles.clearLinkRow} onPress={handleDeleteLocalModel}>
+                  <Ionicons name="trash-outline" size={14} color={colors.danger} />
+                  <Text style={styles.clearLink}>Delete model</Text>
+                </Pressable>
+              </View>
+            </>
+          ) : downloadProgress !== null ? (
+            <>
+              <View style={styles.progressTrack}>
+                <View style={[styles.progressFill, { width: `${Math.round(downloadProgress * 100)}%` }]} />
+              </View>
+              <View style={styles.providerActionRow}>
+                <Text style={styles.credentialStatus}>{Math.round(downloadProgress * 100)}% downloaded…</Text>
+                <Pressable style={styles.clearLinkRow} onPress={handleCancelDownload}>
+                  <Ionicons name="close-circle-outline" size={14} color={colors.danger} />
+                  <Text style={styles.clearLink}>Cancel</Text>
+                </Pressable>
+              </View>
+            </>
+          ) : (
+            <Pressable style={styles.saveButton} onPress={handleDownloadLocalModel}>
+              <Ionicons name="download" size={16} color="#fff" />
+              <Text style={styles.saveButtonText}>Download local model ({LOCAL_MODEL.approxSizeLabel})</Text>
+            </Pressable>
           )}
         </View>
-        <Text style={styles.providerNote}>
-          Runs fully offline on your phone — no API key, no account, nothing ever leaves this device. Experimental:
-          quality and speed are well below the cloud providers above, and the model download is {LOCAL_MODEL.approxSizeLabel}.
-        </Text>
-
-        {localModelDownloaded ? (
-          <>
-            <View style={styles.credentialStatusRow}>
-              <Ionicons name="checkmark-circle" size={14} color={colors.accent} />
-              <Text style={styles.credentialStatus}>Model downloaded and ready on this device.</Text>
-            </View>
-            <View style={styles.providerActionRow}>
-              {activeProviderId !== 'local' && (
-                <Pressable style={styles.useButton} onPress={() => handleUseProvider('local')}>
-                  <Text style={styles.useButtonText}>Use this</Text>
-                </Pressable>
-              )}
-              <Pressable style={styles.clearLinkRow} onPress={handleDeleteLocalModel}>
-                <Ionicons name="trash-outline" size={14} color={colors.danger} />
-                <Text style={styles.clearLink}>Delete model</Text>
-              </Pressable>
-            </View>
-          </>
-        ) : downloadProgress !== null ? (
-          <>
-            <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: `${Math.round(downloadProgress * 100)}%` }]} />
-            </View>
-            <View style={styles.providerActionRow}>
-              <Text style={styles.credentialStatus}>{Math.round(downloadProgress * 100)}% downloaded…</Text>
-              <Pressable style={styles.clearLinkRow} onPress={handleCancelDownload}>
-                <Ionicons name="close-circle-outline" size={14} color={colors.danger} />
-                <Text style={styles.clearLink}>Cancel</Text>
-              </Pressable>
-            </View>
-          </>
-        ) : (
-          <Pressable style={styles.saveButton} onPress={handleDownloadLocalModel}>
-            <Ionicons name="download" size={16} color="#fff" />
-            <Text style={styles.saveButtonText}>Download local model ({LOCAL_MODEL.approxSizeLabel})</Text>
-          </Pressable>
-        )}
-      </View>
+      )}
 
       {statusMessage && (
         <View style={styles.statusRow}>

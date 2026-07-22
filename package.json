@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "index.ts",
   "dependencies": {
+    "@expo/metro-runtime": "^57.0.3",
     "@expo/vector-icons": "^15.1.1",
     "@react-navigation/bottom-tabs": "^7.18.8",
     "@react-navigation/native": "^7.3.8",
@@ -17,21 +18,29 @@
     "expo-system-ui": "^57.0.0",
     "llama.rn": "^0.12.5",
     "react": "19.2.3",
+    "react-dom": "^19.2.3",
     "react-native": "0.86.0",
     "react-native-chart-kit": "^7.0.1",
     "react-native-safe-area-context": "^5.8.0",
     "react-native-screens": "^4.25.2",
-    "react-native-svg": "^15.15.5"
+    "react-native-svg": "^15.15.5",
+    "react-native-web": "^0.21.2"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "electron": "^43.2.0",
+    "electron-builder": "^26.15.3",
+    "serve-handler": "^6.1.7",
     "typescript": "~6.0.3"
   },
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "web:build": "expo export -p web",
+    "desktop": "npm run web:build && electron electron",
+    "desktop:build": "npm run web:build && electron-builder --config electron-builder.yml"
   },
   "private": true
 }

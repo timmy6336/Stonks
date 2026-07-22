@@ -1,0 +1,28 @@
+appId: com.stonks.desktop
+productName: Stonks
+directories:
+  output: release
+files:
+  - electron/**/*
+  - dist/**/*
+  - package.json
+# electron-builder assembles its own copy of package.json for the packaged app, so this overrides
+# just the "main" entry point there — the actual repo's package.json keeps "main": "index.ts",
+# which Expo/React Native's Metro bundler needs for the phone app's entry resolution.
+extraMetadata:
+  main: electron/main.js
+icon: assets/icon.png
+mac:
+  category: public.app-category.finance
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+  category: Finance

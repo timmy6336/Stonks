@@ -18,6 +18,27 @@ To install it on a phone:
 No Play Store, no backend server to host — the app talks directly to market data and
 (optionally) Alpaca's API from the device.
 
+## Desktop app
+
+The same codebase also ships as a desktop app (Windows/macOS/Linux) via a React Native Web
+export wrapped in a minimal Electron shell. It's the same portrait, phone-shaped UI running in a
+sized-to-match window rather than a reflowed desktop layout — it works, but it isn't a redesign.
+The on-device local AI model (llama.rn) isn't available on desktop since it's a native mobile-only
+module; use a cloud AI provider in Settings instead.
+
+Every push builds installers for all three platforms via GitHub Actions ("Build Desktop App").
+Download the artifact for your OS from the **Actions** tab and run it — Windows gets an `.exe`
+installer, macOS a `.dmg`, Linux an `.AppImage`. These builds are unsigned, so your OS may warn
+before letting you run them.
+
+To build locally:
+
+```bash
+npm install
+npm run desktop        # exports the web build and launches it in Electron
+npm run desktop:build   # packages installers into release/ for your current OS
+```
+
 ## Features
 
 - **Watchlist** — track any ticker, see live quote + a rule-based signal at a glance.

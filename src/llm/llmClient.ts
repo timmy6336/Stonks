@@ -1,4 +1,4 @@
-import * as SecureStore from 'expo-secure-store';
+import * as SecureStore from '../storage/secureStorage';
 import { getAppStateValue, setAppStateValue } from '../db/database';
 import { LLM_PROVIDERS, getProvider, type LLMProviderId } from './providers';
 import { generateLocalInsight } from './localLlmEngine';

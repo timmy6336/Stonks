@@ -1,4 +1,4 @@
-import * as SecureStore from 'expo-secure-store';
+import * as SecureStore from '../storage/secureStorage';
 import type { TradeSide } from '../types';
 
 const KEY_ID_STORE_KEY = 'alpaca_key_id';
