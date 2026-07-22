@@ -31,7 +31,15 @@ const CATEGORY_COLORS = ['#0a7d32', '#3fa34d', '#7cb342', '#d9822b', '#c0392b', 
 
 // How often an AI-managed save re-trades while this screen is open. There's no background
 // execution in this app, so consistency is bounded by how long the user keeps it open.
-const AI_RUN_INTERVAL_MS = 60 * 60 * 1000;
+const AI_RUN_INTERVAL_KEY = 'ai_run_interval_minutes';
+const DEFAULT_AI_RUN_INTERVAL_MINUTES = 60;
+const AI_RUN_INTERVAL_OPTIONS = [
+  { minutes: 15, label: '15 min' },
+  { minutes: 30, label: '30 min' },
+  { minutes: 60, label: '1 hr' },
+  { minutes: 120, label: '2 hr' },
+  { minutes: 240, label: '4 hr' },
+];
 
 const CHART_WINDOW_KEY = 'portfolio_chart_window';
 const CHART_WINDOWS: { key: PerformanceWindow; label: string }[] = [
@@ -74,6 +82,7 @@ export function PortfolioScreen({ navigation }: Props) {
   const [chartWindow, setChartWindowState] = useState<PerformanceWindow>('WEEKLY');
   const [aiLog, setAiLog] = useState<AiDecisionRound[]>([]);
   const [aiRunning, setAiRunning] = useState(false);
+  const [aiRunIntervalMinutes, setAiRunIntervalMinutesState] = useState(DEFAULT_AI_RUN_INTERVAL_MINUTES);
 
   useEffect(() => {
     getAppStateValue(CHART_WINDOW_KEY).then((saved) => {
@@ -81,7 +90,18 @@ export function PortfolioScreen({ navigation }: Props) {
         setChartWindowState(saved as PerformanceWindow);
       }
     });
+    getAppStateValue(AI_RUN_INTERVAL_KEY).then((saved) => {
+      const minutes = Number(saved);
+      if (saved && AI_RUN_INTERVAL_OPTIONS.some((o) => o.minutes === minutes)) {
+        setAiRunIntervalMinutesState(minutes);
+      }
+    });
   }, []);
+
+  const setAiRunIntervalMinutes = (minutes: number) => {
+    setAiRunIntervalMinutesState(minutes);
+    setAppStateValue(AI_RUN_INTERVAL_KEY, String(minutes)).catch(() => {});
+  };
 
   const setChartWindow = (window: PerformanceWindow) => {
     setChartWindowState(window);
@@ -162,10 +182,10 @@ export function PortfolioScreen({ navigation }: Props) {
   useEffect(() => {
     if (loading || aiRunning || !profile?.isAiManaged) return;
     const lastRun = aiLog[0]?.timestamp ?? 0;
-    if (Date.now() - lastRun >= AI_RUN_INTERVAL_MS) {
+    if (Date.now() - lastRun >= aiRunIntervalMinutes * 60 * 1000) {
       handleRunAiRound(profile.id);
     }
-  }, [loading, aiRunning, profile, aiLog, handleRunAiRound]);
+  }, [loading, aiRunning, profile, aiLog, aiRunIntervalMinutes, handleRunAiRound]);
 
   // While this screen stays open, keep nudging another round on the same interval rather than only
   // checking once at focus time.
@@ -173,9 +193,9 @@ export function PortfolioScreen({ navigation }: Props) {
     if (!profile?.isAiManaged) return;
     const timer = setInterval(() => {
       if (!aiRunning) handleRunAiRound(profile.id);
-    }, AI_RUN_INTERVAL_MS);
+    }, aiRunIntervalMinutes * 60 * 1000);
     return () => clearInterval(timer);
-  }, [profile, aiRunning, handleRunAiRound]);
+  }, [profile, aiRunning, aiRunIntervalMinutes, handleRunAiRound]);
 
   const cash = profile?.cashBalance ?? 0;
   const marketValue = positions.reduce((sum, p) => sum + (p.currentPrice ?? p.avgCost) * p.quantity, 0);
@@ -248,10 +268,28 @@ export function PortfolioScreen({ navigation }: Props) {
                 <Text style={styles.sectionTitle}>AI Trader</Text>
               </View>
               <Text style={styles.aiHint}>
-                This save trades on its own roughly once an hour while this screen is open, using your active AI
+                This save trades on its own on the interval below while this screen is open, using your active AI
                 provider — no manual buy/sell. There's no background execution, so keep the app open (or check back
                 often) for it to run consistently. An experiment: watch the log below to see how it does.
               </Text>
+              <View style={styles.aiIntervalRow}>
+                {AI_RUN_INTERVAL_OPTIONS.map((o) => (
+                  <Pressable
+                    key={o.minutes}
+                    style={[styles.aiIntervalChip, aiRunIntervalMinutes === o.minutes && styles.aiIntervalChipSelected]}
+                    onPress={() => setAiRunIntervalMinutes(o.minutes)}
+                  >
+                    <Text
+                      style={[
+                        styles.aiIntervalChipText,
+                        aiRunIntervalMinutes === o.minutes && styles.aiIntervalChipTextSelected,
+                      ]}
+                    >
+                      {o.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
               <Pressable
                 style={styles.aiRunButton}
                 onPress={() => profile && handleRunAiRound(profile.id)}
@@ -464,6 +502,17 @@ function createStyles(colors: ThemeColors) {
     summarySub: { marginTop: 6, color: colors.textSecondary },
     aiCard: { backgroundColor: colors.card, borderRadius: 12, padding: 16, marginBottom: 16 },
     aiHint: { color: colors.textSecondary, fontSize: 12, lineHeight: 17, marginBottom: 10 },
+    aiIntervalRow: { flexDirection: 'row', gap: 6, marginBottom: 10 },
+    aiIntervalChip: {
+      flex: 1,
+      alignItems: 'center',
+      paddingVertical: 6,
+      borderRadius: 8,
+      backgroundColor: colors.chipBackground,
+    },
+    aiIntervalChipSelected: { backgroundColor: colors.accent },
+    aiIntervalChipText: { color: colors.text, fontWeight: '600', fontSize: 11, includeFontPadding: false },
+    aiIntervalChipTextSelected: { color: '#fff' },
     aiRunButton: {
       flexDirection: 'row',
       justifyContent: 'center',
