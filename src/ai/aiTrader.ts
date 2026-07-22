@@ -249,7 +249,8 @@ Rules:
 - No single BUY should cost more than ${maxPositionPercent}% of total portfolio value ($${((maxPositionPercent / 100) * totalPortfolioValue).toFixed(2)}).
 - Keep total BUY cost across all actions within the cash available.
 - quantity must be a positive whole number of shares.
-- Propose at most ${maxActions} actions this round. Prefer decisive action when intraday momentum is clearly running one way; do nothing rather than force a trade when the picture is unclear.`;
+- Propose at most ${maxActions} actions this round. Prefer decisive action when intraday momentum is clearly running one way; do nothing rather than force a trade when the picture is unclear.
+- Keep each action's "reasoning" to one short phrase (under 12 words). You have limited output space and multiple actions to fit — a cut-off response loses ALL of your actions this round, not just the last one.`;
 }
 
 function buildPrompt(
@@ -308,7 +309,8 @@ Rules:
 - No single BUY should cost more than ${maxPositionPercent}% of total portfolio value ($${((maxPositionPercent / 100) * totalPortfolioValue).toFixed(2)}).
 - Keep total BUY cost across all actions within the cash available.
 - quantity must be a positive whole number of shares.
-- Propose at most ${maxActions} actions this round.`;
+- Propose at most ${maxActions} actions this round.
+- Keep each action's "reasoning" to one short phrase (under 12 words). You have limited output space and multiple actions to fit — a cut-off response loses ALL of your actions this round, not just the last one.`;
 }
 
 /**
@@ -355,15 +357,54 @@ function simulateFill(quotePrice: number, side: TradeSide): number {
   return Math.round(quotePrice * factor * 100) / 100;
 }
 
+/**
+ * Salvages whatever it can from a response that got cut off before it finished valid JSON — this
+ * happens when the provider hits its output token limit mid-object (e.g. truncated in the middle
+ * of an action's "reasoning" string). Rather than losing every proposed action because the very
+ * last one didn't finish, pull out the summary text and every *complete* action object via regex;
+ * an action object is flat (no nested braces), so a balanced `{...}` match reliably captures only
+ * whole ones and naturally drops a trailing partial one.
+ */
+function recoverTruncatedResponse(text: string): { summary?: string; actions?: unknown[] } {
+  const summaryMatch = text.match(/"summary"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+  const actionMatches = text.match(/\{[^{}]*\}/g) ?? [];
+  const actions: unknown[] = [];
+  for (const m of actionMatches) {
+    try {
+      const obj = JSON.parse(m);
+      if (obj && typeof obj === 'object' && 'action' in obj) actions.push(obj);
+    } catch {
+      // this object itself didn't finish cleanly either — skip it, not worth guessing at
+    }
+  }
+  if (!summaryMatch && actions.length === 0) {
+    throw new Error('Response did not contain a usable JSON object (it may have been cut off).');
+  }
+  const truncationNote = ' [response was cut off — later actions this round may be missing]';
+  return {
+    summary: (summaryMatch ? summaryMatch[1] : 'No summary provided.') + truncationNote,
+    actions,
+  };
+}
+
 function extractJson(raw: string): { summary?: string; actions?: unknown[] } {
   const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
   const text = fenced ? fenced[1] : raw;
   const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start === -1 || end === -1 || end < start) {
+  if (start === -1) {
     throw new Error('Response did not contain a JSON object.');
   }
-  return JSON.parse(text.slice(start, end + 1));
+
+  const end = text.lastIndexOf('}');
+  if (end !== -1 && end > start) {
+    try {
+      return JSON.parse(text.slice(start, end + 1));
+    } catch {
+      // fall through — the slice from first '{' to last '}' wasn't valid, likely truncated mid-object
+    }
+  }
+
+  return recoverTruncatedResponse(text.slice(start));
 }
 
 /**

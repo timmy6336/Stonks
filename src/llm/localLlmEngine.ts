@@ -37,7 +37,9 @@ export async function generateLocalInsight(prompt: string): Promise<string> {
   const context = await getContext();
   const result = await context.completion({
     messages: [{ role: 'user', content: prompt }],
-    n_predict: 300,
+    // A trading round can ask for several actions per response; 300 tokens was truncating
+    // multi-action replies mid-JSON before they finished.
+    n_predict: 700,
     stop: STOP_WORDS,
   });
   const text = result?.text?.trim();

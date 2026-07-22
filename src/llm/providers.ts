@@ -27,6 +27,10 @@ async function chatCompletion(
     body: JSON.stringify({
       model,
       messages: [{ role: 'user', content: prompt }],
+      // The trading prompt can ask for several actions per round; a low provider-side default
+      // output limit was truncating responses mid-JSON before they finished. This is generous
+      // enough for a summary plus a full batch of actions with short reasoning.
+      max_tokens: 1024,
     }),
   });
   const json = await res.json();
@@ -46,7 +50,10 @@ async function generateGemini(apiKey: string, prompt: string): Promise<string> {
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { maxOutputTokens: 1024 },
+      }),
     }
   );
   const json = await res.json();
