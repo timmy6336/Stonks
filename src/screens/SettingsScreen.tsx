@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -18,8 +18,11 @@ import {
   hasProviderApiKey,
   saveProviderApiKey,
   setActiveProviderId,
+  type ActiveProviderId,
 } from '../llm/llmClient';
 import { LLM_PROVIDERS, type LLMProviderId } from '../llm/providers';
+import { deleteModel, downloadModel, isModelDownloaded, LOCAL_MODEL } from '../llm/localModel';
+import { unloadLocalModel } from '../llm/localLlmEngine';
 import { useTheme } from '../theme/ThemeContext';
 import type { ThemeColors } from '../theme/theme';
 
@@ -40,8 +43,11 @@ export function SettingsScreen({ navigation }: Props) {
   const [providerHasKey, setProviderHasKey] = useState<Record<LLMProviderId, boolean>>(
     Object.fromEntries(LLM_PROVIDERS.map((p) => [p.id, false])) as Record<LLMProviderId, boolean>
   );
-  const [activeProviderId, setActiveProviderIdState] = useState<LLMProviderId | null>(null);
+  const [activeProviderId, setActiveProviderIdState] = useState<ActiveProviderId | null>(null);
   const [savingProviderId, setSavingProviderId] = useState<LLMProviderId | null>(null);
+  const [localModelDownloaded, setLocalModelDownloaded] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
+  const downloadAbortRef = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
     const creds = await getAlpacaCredentials();
@@ -50,6 +56,7 @@ export function SettingsScreen({ navigation }: Props) {
     const keyChecks = await Promise.all(LLM_PROVIDERS.map((p) => hasProviderApiKey(p.id)));
     setProviderHasKey(Object.fromEntries(LLM_PROVIDERS.map((p, i) => [p.id, keyChecks[i]])) as Record<LLMProviderId, boolean>);
     setActiveProviderIdState(await getActiveProviderId());
+    setLocalModelDownloaded(isModelDownloaded());
   }, []);
 
   useFocusEffect(
@@ -105,10 +112,39 @@ export function SettingsScreen({ navigation }: Props) {
     setStatusMessage(`${LLM_PROVIDERS.find((p) => p.id === id)!.name} API key removed.`);
   };
 
-  const handleUseProvider = async (id: LLMProviderId) => {
+  const handleUseProvider = async (id: ActiveProviderId) => {
     await setActiveProviderId(id);
     await load();
-    setStatusMessage(`${LLM_PROVIDERS.find((p) => p.id === id)!.name} is now your active AI provider.`);
+    const name = id === 'local' ? LOCAL_MODEL.name : LLM_PROVIDERS.find((p) => p.id === id)!.name;
+    setStatusMessage(`${name} is now your active AI provider.`);
+  };
+
+  const handleDownloadLocalModel = async () => {
+    setStatusMessage(null);
+    setDownloadProgress(0);
+    const controller = new AbortController();
+    downloadAbortRef.current = controller;
+    try {
+      await downloadModel(({ fraction }) => setDownloadProgress(fraction), controller.signal);
+      await load();
+      setStatusMessage('Local model downloaded — it now runs fully offline, no API key needed.');
+    } catch (e) {
+      setStatusMessage(`Download failed: ${(e as Error).message}`);
+    } finally {
+      setDownloadProgress(null);
+      downloadAbortRef.current = null;
+    }
+  };
+
+  const handleCancelDownload = () => {
+    downloadAbortRef.current?.abort();
+  };
+
+  const handleDeleteLocalModel = async () => {
+    await unloadLocalModel();
+    deleteModel();
+    await load();
+    setStatusMessage('Local model removed.');
   };
 
   const handleToggleLive = async (value: boolean) => {
@@ -294,6 +330,59 @@ export function SettingsScreen({ navigation }: Props) {
         );
       })}
 
+      <View style={styles.providerCard}>
+        <View style={styles.providerHeaderRow}>
+          <Text style={styles.providerName}>{LOCAL_MODEL.name} (on-device)</Text>
+          {activeProviderId === 'local' && (
+            <View style={styles.activeBadge}>
+              <Text style={styles.activeBadgeText}>ACTIVE</Text>
+            </View>
+          )}
+        </View>
+        <Text style={styles.providerNote}>
+          Runs fully offline on your phone — no API key, no account, nothing ever leaves this device. Experimental:
+          quality and speed are well below the cloud providers above, and the model download is {LOCAL_MODEL.approxSizeLabel}.
+        </Text>
+
+        {localModelDownloaded ? (
+          <>
+            <View style={styles.credentialStatusRow}>
+              <Ionicons name="checkmark-circle" size={14} color={colors.accent} />
+              <Text style={styles.credentialStatus}>Model downloaded and ready on this device.</Text>
+            </View>
+            <View style={styles.providerActionRow}>
+              {activeProviderId !== 'local' && (
+                <Pressable style={styles.useButton} onPress={() => handleUseProvider('local')}>
+                  <Text style={styles.useButtonText}>Use this</Text>
+                </Pressable>
+              )}
+              <Pressable style={styles.clearLinkRow} onPress={handleDeleteLocalModel}>
+                <Ionicons name="trash-outline" size={14} color={colors.danger} />
+                <Text style={styles.clearLink}>Delete model</Text>
+              </Pressable>
+            </View>
+          </>
+        ) : downloadProgress !== null ? (
+          <>
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, { width: `${Math.round(downloadProgress * 100)}%` }]} />
+            </View>
+            <View style={styles.providerActionRow}>
+              <Text style={styles.credentialStatus}>{Math.round(downloadProgress * 100)}% downloaded…</Text>
+              <Pressable style={styles.clearLinkRow} onPress={handleCancelDownload}>
+                <Ionicons name="close-circle-outline" size={14} color={colors.danger} />
+                <Text style={styles.clearLink}>Cancel</Text>
+              </Pressable>
+            </View>
+          </>
+        ) : (
+          <Pressable style={styles.saveButton} onPress={handleDownloadLocalModel}>
+            <Ionicons name="download" size={16} color="#fff" />
+            <Text style={styles.saveButtonText}>Download local model ({LOCAL_MODEL.approxSizeLabel})</Text>
+          </Pressable>
+        )}
+      </View>
+
       {statusMessage && (
         <View style={styles.statusRow}>
           <Ionicons name="checkmark-circle" size={14} color={colors.accent} />
@@ -362,6 +451,8 @@ function createStyles(colors: ThemeColors) {
     providerActionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 },
     useButton: { backgroundColor: colors.chipBackground, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
     useButtonText: { color: colors.text, fontWeight: '600', fontSize: 12, includeFontPadding: false },
+    progressTrack: { height: 8, borderRadius: 4, backgroundColor: colors.chipBackground, overflow: 'hidden', marginBottom: 8 },
+    progressFill: { height: '100%', backgroundColor: colors.accent, borderRadius: 4 },
     liveRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
     statusRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16 },
     status: { color: colors.accent },

@@ -1,6 +1,10 @@
 import * as SecureStore from 'expo-secure-store';
 import { getAppStateValue, setAppStateValue } from '../db/database';
 import { LLM_PROVIDERS, getProvider, type LLMProviderId } from './providers';
+import { generateLocalInsight } from './localLlmEngine';
+import { isModelDownloaded } from './localModel';
+
+export type ActiveProviderId = LLMProviderId | 'local';
 
 const ACTIVE_PROVIDER_KEY = 'llm_active_provider';
 
@@ -28,31 +32,45 @@ export async function hasProviderApiKey(id: LLMProviderId): Promise<boolean> {
   return (await getProviderApiKey(id)) !== null;
 }
 
-export async function hasAnyApiKey(): Promise<boolean> {
+async function hasAnyApiKey(): Promise<boolean> {
   const results = await Promise.all(LLM_PROVIDERS.map((p) => hasProviderApiKey(p.id)));
   return results.some(Boolean);
 }
 
-/** The provider used for AI insights: the user's chosen default, or the first provider with a saved key. */
-export async function getActiveProviderId(): Promise<LLMProviderId | null> {
-  const saved = (await getAppStateValue(ACTIVE_PROVIDER_KEY)) as LLMProviderId | null;
-  if (saved && (await hasProviderApiKey(saved))) return saved;
+/** True once any AI option is usable — a saved API key, or the local model downloaded. */
+export async function hasAnyProviderConfigured(): Promise<boolean> {
+  if (isModelDownloaded()) return true;
+  return hasAnyApiKey();
+}
+
+/** The provider used for AI insights: the user's chosen default, or the first usable option. */
+export async function getActiveProviderId(): Promise<ActiveProviderId | null> {
+  const saved = (await getAppStateValue(ACTIVE_PROVIDER_KEY)) as ActiveProviderId | null;
+  if (saved === 'local' && isModelDownloaded()) return 'local';
+  if (saved && saved !== 'local' && (await hasProviderApiKey(saved))) return saved;
+
   for (const p of LLM_PROVIDERS) {
     if (await hasProviderApiKey(p.id)) return p.id;
   }
+  if (isModelDownloaded()) return 'local';
   return null;
 }
 
-export async function setActiveProviderId(id: LLMProviderId): Promise<void> {
+export async function setActiveProviderId(id: ActiveProviderId): Promise<void> {
   await setAppStateValue(ACTIVE_PROVIDER_KEY, id);
 }
 
-/** Sends a prompt to the user's active AI provider (using their own API key) and returns the generated text. */
+/** Sends a prompt to the user's active AI provider (their own API key, or the on-device model) and returns the text. */
 export async function generateInsight(prompt: string): Promise<string> {
   const activeId = await getActiveProviderId();
   if (!activeId) {
-    throw new Error('No AI provider configured. Add a free API key in Settings first.');
+    throw new Error('No AI provider configured. Add a free API key or download the local model in Settings first.');
   }
+
+  if (activeId === 'local') {
+    return generateLocalInsight(prompt);
+  }
+
   const provider = getProvider(activeId);
   const apiKey = await getProviderApiKey(activeId);
   if (!apiKey) {
