@@ -67,6 +67,11 @@ function getDb(): Promise<SQLite.SQLiteDatabase> {
           raw_response TEXT,
           actions_json TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS listed_symbols (
+          symbol TEXT PRIMARY KEY NOT NULL,
+          name TEXT NOT NULL,
+          exchange TEXT NOT NULL
+        );
       `);
 
       await migrateFromLegacySingleProfileSchema(db);
@@ -589,4 +594,47 @@ export async function getAiDecisionLog(profileId: number, limit = 20): Promise<A
     actions: JSON.parse(r.actions_json) as AiTradeAction[],
     rawResponse: r.raw_response ?? null,
   }));
+}
+
+// --- Full US-listed-symbol master list (search/discovery breadth beyond curated + screener lists) ---
+
+export type ListedSymbolRow = { symbol: string; name: string; exchange: string };
+
+export async function getListedSymbolsCount(): Promise<number> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM listed_symbols');
+  return row?.count ?? 0;
+}
+
+/** Replaces the entire cached symbol directory in one transaction — this is a full refresh, not an incremental update. */
+export async function replaceListedSymbols(rows: ListedSymbolRow[]): Promise<void> {
+  const db = await getDb();
+  await db.withTransactionAsync(async () => {
+    await db.execAsync('DELETE FROM listed_symbols');
+    for (const r of rows) {
+      await db.runAsync('INSERT OR REPLACE INTO listed_symbols (symbol, name, exchange) VALUES (?, ?, ?)', r.symbol, r.name, r.exchange);
+    }
+  });
+}
+
+/** Symbol-prefix or company-name substring search across the full cached market directory. */
+export async function searchListedSymbols(query: string, limit = 8): Promise<ListedSymbolRow[]> {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+  const db = await getDb();
+  const upper = trimmed.toUpperCase();
+  return db.getAllAsync<ListedSymbolRow>(
+    `SELECT symbol, name, exchange FROM listed_symbols
+     WHERE symbol LIKE ?1 OR name LIKE ?2
+     ORDER BY (CASE WHEN symbol = ?3 THEN 0 WHEN symbol LIKE ?1 THEN 1 ELSE 2 END), LENGTH(symbol) ASC
+     LIMIT ?4`,
+    `${upper}%`, `%${trimmed}%`, upper, limit
+  );
+}
+
+/** A random sample from the full market directory, so discovery isn't limited to symbols that are already popular enough to show up on a trending/gainers/curated list. */
+export async function getRandomListedSymbols(count: number): Promise<string[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ symbol: string }>('SELECT symbol FROM listed_symbols ORDER BY RANDOM() LIMIT ?', count);
+  return rows.map((r) => r.symbol);
 }

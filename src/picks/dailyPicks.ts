@@ -4,7 +4,7 @@ import { computeTrendPrediction } from '../predictions/trendPrediction';
 import { generateInsight, getActiveProviderId } from '../llm/llmClient';
 import { parseJsonWithRecovery } from '../llm/jsonRecovery';
 import { mapWithConcurrency } from '../utils/concurrency';
-import { getAppStateValue, getWatchlist, setAppStateValue } from '../db/database';
+import { getAppStateValue, getRandomListedSymbols, getWatchlist, setAppStateValue } from '../db/database';
 import { STOCK_CATEGORIES } from '../data/categories';
 import type { SignalScore } from '../types';
 
@@ -83,17 +83,20 @@ type PickCandidateInfo = {
  * and every curated category — each candidate tagged with which of those lists it appeared on.
  */
 async function gatherCandidateUniverse(maxCandidates: number): Promise<Map<string, string[]>> {
-  const [watchlist, trending, gainers, losers, actives, undervaluedGrowth, growthTech, aggressiveSmallCap, undervaluedLarge] =
+  const [watchlist, trending, gainers, losers, actives, undervaluedGrowth, growthTech, aggressiveSmallCap, undervaluedLarge, randomListed] =
     await Promise.all([
       getWatchlist().then((items) => items.map((w) => w.symbol)),
       fetchTrendingSymbols().catch(() => [] as string[]),
-      fetchScreener('day_gainers', 20).catch(() => [] as string[]),
-      fetchScreener('day_losers', 20).catch(() => [] as string[]),
-      fetchScreener('most_actives', 20).catch(() => [] as string[]),
-      fetchScreener('undervalued_growth_stocks', 15).catch(() => [] as string[]),
-      fetchScreener('growth_technology_stocks', 15).catch(() => [] as string[]),
-      fetchScreener('aggressive_small_caps', 15).catch(() => [] as string[]),
-      fetchScreener('undervalued_large_caps', 15).catch(() => [] as string[]),
+      fetchScreener('day_gainers', 100).catch(() => [] as string[]),
+      fetchScreener('day_losers', 100).catch(() => [] as string[]),
+      fetchScreener('most_actives', 100).catch(() => [] as string[]),
+      fetchScreener('undervalued_growth_stocks', 100).catch(() => [] as string[]),
+      fetchScreener('growth_technology_stocks', 100).catch(() => [] as string[]),
+      fetchScreener('aggressive_small_caps', 100).catch(() => [] as string[]),
+      fetchScreener('undervalued_large_caps', 100).catch(() => [] as string[]),
+      // A random slice of the full US-listed market, so picks aren't limited to symbols already
+      // popular enough to be trending/gaining/losing/on a curated list today.
+      getRandomListedSymbols(30).catch(() => [] as string[]),
     ]);
 
   const labeledLists: [string, string[]][] = [
@@ -106,6 +109,7 @@ async function gatherCandidateUniverse(maxCandidates: number): Promise<Map<strin
     ['growth tech', growthTech],
     ['aggressive small-cap', aggressiveSmallCap],
     ['undervalued large-cap', undervaluedLarge],
+    ['random sample', randomListed],
     ...STOCK_CATEGORIES.map((c): [string, string[]] => [c.name, c.symbols]),
   ];
 

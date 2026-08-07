@@ -80,7 +80,7 @@ export function TrendingScreen({ navigation }: Props) {
     setOnSaleLoading(true);
     setOnSaleError(null);
     try {
-      setOnSaleSymbols(await fetchScreener('day_losers', 15));
+      setOnSaleSymbols(await fetchScreener('day_losers', 100));
     } catch (e) {
       setOnSaleError((e as Error).message);
     } finally {

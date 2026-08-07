@@ -5,6 +5,8 @@ const TRENDING_BASE = 'https://query1.finance.yahoo.com/v1/finance/trending';
 const QUOTE_SUMMARY_BASE = 'https://query2.finance.yahoo.com/v10/finance/quoteSummary';
 const SEARCH_BASE = 'https://query1.finance.yahoo.com/v1/finance/search';
 const SCREENER_BASE = 'https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved';
+const NASDAQ_LISTED_URL = 'https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt';
+const OTHER_LISTED_URL = 'https://www.nasdaqtrader.com/dynamic/SymDir/otherlisted.txt';
 
 type ChartResult = {
   meta: {
@@ -98,7 +100,7 @@ type TrendingResponse = {
 };
 
 /** Currently trending tickers (region defaults to US). Falls back to an empty list on failure. */
-export async function fetchTrendingSymbols(region = 'US', count = 15): Promise<string[]> {
+export async function fetchTrendingSymbols(region = 'US', count = 40): Promise<string[]> {
   const res = await fetch(`${TRENDING_BASE}/${region}?count=${count}`);
   if (!res.ok) {
     throw new Error(`Trending stocks request failed: HTTP ${res.status}`);
@@ -248,7 +250,7 @@ export type ScreenerId =
   | 'undervalued_large_caps';
 
 /** Symbols from one of Yahoo's predefined market screeners (a much broader universe than our curated categories). */
-export async function fetchScreener(scrId: ScreenerId, count = 25): Promise<string[]> {
+export async function fetchScreener(scrId: ScreenerId, count = 100): Promise<string[]> {
   const res = await fetch(`${SCREENER_BASE}?formatted=false&lang=en-US&region=US&scrIds=${scrId}&count=${count}`);
   if (!res.ok) {
     throw new Error(`Screener request failed: HTTP ${res.status}`);
@@ -259,4 +261,54 @@ export async function fetchScreener(scrId: ScreenerId, count = 25): Promise<stri
     throw new Error('No screener data available right now.');
   }
   return result.quotes.map((q) => q.symbol);
+}
+
+export type ListedSymbol = { symbol: string; name: string; exchange: string };
+
+const OTHER_EXCHANGE_CODES: Record<string, string> = {
+  A: 'NYSE American',
+  N: 'NYSE',
+  P: 'NYSE Arca',
+  Z: 'BATS',
+  V: 'IEXG',
+};
+
+/**
+ * Parses one of NASDAQ Trader's pipe-delimited symbol directory files. Both files share the same
+ * general shape (header row, one row per security, a "File Creation Time: ..." footer line to
+ * ignore) but put the columns we care about in different positions.
+ */
+function parseListedFile(text: string, symbolCol: number, nameCol: number, testCol: number, exchangeCol: number | null, defaultExchange: string): ListedSymbol[] {
+  const rows: ListedSymbol[] = [];
+  const lines = text.split('\n');
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line || line.startsWith('File Creation Time')) continue;
+    const cols = line.split('|');
+    const symbol = cols[symbolCol]?.trim();
+    const name = cols[nameCol]?.trim();
+    if (!symbol || !name) continue;
+    if (cols[testCol]?.trim() === 'Y') continue; // skip test/placeholder issues
+    const code = exchangeCol != null ? cols[exchangeCol]?.trim() : undefined;
+    const exchange = code ? (OTHER_EXCHANGE_CODES[code] ?? code) : defaultExchange;
+    rows.push({ symbol, name, exchange });
+  }
+  return rows;
+}
+
+/**
+ * The full list of every NASDAQ- and NYSE/NYSE American/ARCA/BATS-listed security — several
+ * thousand tickers — straight from the free, public, no-key directory files NASDAQ itself
+ * publishes for this exact purpose. This is what makes search/discovery cover the whole US
+ * market, rather than just whatever a handful of curated categories or "today's movers"
+ * screeners happen to surface.
+ */
+export async function fetchAllListedSymbols(): Promise<ListedSymbol[]> {
+  const [nasdaqText, otherText] = await Promise.all([
+    fetch(NASDAQ_LISTED_URL).then((r) => r.text()),
+    fetch(OTHER_LISTED_URL).then((r) => r.text()),
+  ]);
+  const nasdaq = parseListedFile(nasdaqText, 0, 1, 3, null, 'NASDAQ');
+  const other = parseListedFile(otherText, 0, 1, 6, 2, 'NYSE');
+  return [...nasdaq, ...other];
 }

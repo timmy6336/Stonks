@@ -2,7 +2,7 @@ import { fetchHistory, fetchQuote, fetchScreener, fetchTrendingSymbols } from '.
 import { computeSignal } from '../signals/signalEngine';
 import { computeTrendPrediction } from '../predictions/trendPrediction';
 import { generateInsight, getActiveProviderId } from '../llm/llmClient';
-import { getAiDecisionLog, getPositions, getProfileById, getWatchlist, logAiDecisionRound, recordPaperTrade } from '../db/database';
+import { getAiDecisionLog, getPositions, getProfileById, getRandomListedSymbols, getWatchlist, logAiDecisionRound, recordPaperTrade } from '../db/database';
 import { STOCK_CATEGORIES } from '../data/categories';
 import { mapWithConcurrency } from '../utils/concurrency';
 import { parseJsonWithRecovery } from '../llm/jsonRecovery';
@@ -73,16 +73,19 @@ async function buildCandidateUniverse(
   maxCandidates: number,
   includeCuratedCategories: boolean
 ): Promise<string[]> {
-  const [watchlist, trending, gainers, losers, actives] = await Promise.all([
+  const [watchlist, trending, gainers, losers, actives, randomListed] = await Promise.all([
     getWatchlist().then((items) => items.map((w) => w.symbol)),
     fetchTrendingSymbols().catch(() => [] as string[]),
-    fetchScreener('day_gainers', 15).catch(() => [] as string[]),
-    fetchScreener('day_losers', 15).catch(() => [] as string[]),
-    fetchScreener('most_actives', 15).catch(() => [] as string[]),
+    fetchScreener('day_gainers', 100).catch(() => [] as string[]),
+    fetchScreener('day_losers', 100).catch(() => [] as string[]),
+    fetchScreener('most_actives', 100).catch(() => [] as string[]),
+    // A random slice of the full US-listed market, so the universe isn't limited to symbols
+    // already popular enough to be trending/gaining/losing today.
+    getRandomListedSymbols(30).catch(() => [] as string[]),
   ]);
 
   const sources = [heldSymbols, watchlist, trending, gainers, losers, actives];
-  if (includeCuratedCategories) sources.push(...STOCK_CATEGORIES.map((c) => c.symbols));
+  if (includeCuratedCategories) sources.push(...STOCK_CATEGORIES.map((c) => c.symbols), randomListed);
   const interleaved = interleave(sources);
   return [...new Set(interleaved)].slice(0, maxCandidates);
 }

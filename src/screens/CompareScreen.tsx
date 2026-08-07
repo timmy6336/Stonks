@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Dimensions, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LineChart } from 'react-native-chart-kit';
-import { fetchHistory, searchSymbols, type SymbolSearchResult } from '../api/marketData';
+import { fetchHistory, type SymbolSearchResult } from '../api/marketData';
+import { searchAllSymbols } from '../search/symbolSearch';
 import { useTheme } from '../theme/ThemeContext';
 import { hexToRgba, type ThemeColors } from '../theme/theme';
 import type { Candle } from '../types';
@@ -43,7 +44,7 @@ export function CompareScreen() {
     setSearching(true);
     const timer = setTimeout(async () => {
       try {
-        setSearchResults(await searchSymbols(q));
+        setSearchResults(await searchAllSymbols(q));
       } catch {
         setSearchResults([]);
       } finally {

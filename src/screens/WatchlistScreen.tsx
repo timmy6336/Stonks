@@ -14,7 +14,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { WatchlistStackParamList } from '../navigation/types';
 import { addToWatchlist, getPositions, getWatchlist, logSignalIfNew, removeFromWatchlist } from '../db/database';
-import { fetchHistory, fetchQuote, searchSymbols, type SymbolSearchResult } from '../api/marketData';
+import { fetchHistory, fetchQuote, type SymbolSearchResult } from '../api/marketData';
+import { searchAllSymbols } from '../search/symbolSearch';
 import { computeSignal } from '../signals/signalEngine';
 import { checkAlertsForSymbol } from '../notifications/alertEngine';
 import { useTheme } from '../theme/ThemeContext';
@@ -128,7 +129,7 @@ export function WatchlistScreen({ navigation }: Props) {
     setSearching(true);
     const timer = setTimeout(async () => {
       try {
-        const results = await searchSymbols(query);
+        const results = await searchAllSymbols(query);
         setSearchResults(results);
       } catch {
         setSearchResults([]);

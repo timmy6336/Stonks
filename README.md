@@ -32,6 +32,9 @@ No Play Store, no backend server to host — the app talks directly to market da
   math model (technical signal, trend projection, momentum, cross-list confirmation across several
   free Yahoo screeners and curated categories) and, separately, an AI-generated top 5 from your
   active AI provider given the same broad candidate data plus recent headlines.
+- **Full market search** — the watchlist/compare search covers every NASDAQ- and NYSE-listed
+  security (several thousand tickers), not just what Yahoo's own search surfaces, via NASDAQ's
+  free public symbol directory files (refreshed automatically, at most once a day).
 
 ## Development
 

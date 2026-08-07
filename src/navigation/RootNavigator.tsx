@@ -19,6 +19,7 @@ import { SignalTrackRecordScreen } from '../screens/SignalTrackRecordScreen';
 import { OnboardingScreen } from '../screens/OnboardingScreen';
 import { getAppStateValue, setAppStateValue } from '../db/database';
 import { maybeSendDailyDigest } from '../notifications/dailyDigest';
+import { refreshListedSymbolsIfStale } from '../search/symbolSearch';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useTheme } from '../theme/ThemeContext';
 import type {
@@ -203,6 +204,7 @@ export function RootNavigator() {
       setCheckingOnboarding(false);
       if (onboarded) {
         maybeSendDailyDigest().catch(() => {}); // best-effort; never block startup on it
+        refreshListedSymbolsIfStale().catch(() => {}); // ditto — search still works off the existing cache (or Yahoo alone) if this fails
       }
     })();
   }, []);
@@ -211,6 +213,7 @@ export function RootNavigator() {
     setAppStateValue(ONBOARDED_KEY, '1').catch(() => {});
     setNeedsOnboarding(false);
     maybeSendDailyDigest().catch(() => {});
+    refreshListedSymbolsIfStale().catch(() => {});
   };
 
   const navTheme = {
