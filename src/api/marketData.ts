@@ -238,7 +238,14 @@ type ScreenerResponse = {
   };
 };
 
-export type ScreenerId = 'day_losers' | 'day_gainers' | 'most_actives' | 'undervalued_growth_stocks';
+export type ScreenerId =
+  | 'day_losers'
+  | 'day_gainers'
+  | 'most_actives'
+  | 'undervalued_growth_stocks'
+  | 'growth_technology_stocks'
+  | 'aggressive_small_caps'
+  | 'undervalued_large_caps';
 
 /** Symbols from one of Yahoo's predefined market screeners (a much broader universe than our curated categories). */
 export async function fetchScreener(scrId: ScreenerId, count = 25): Promise<string[]> {

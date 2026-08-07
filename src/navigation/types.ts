@@ -20,6 +20,11 @@ export type PortfolioStackParamList = {
   AiDecisionDetail: { round: AiDecisionRound; profileName: string; riskLevel: string };
 };
 
+export type DailyPicksStackParamList = {
+  DailyPicks: undefined;
+  StockDetail: StockDetailParams;
+};
+
 export type SettingsStackParamList = {
   Settings: undefined;
   HowItWorks: undefined;
@@ -29,6 +34,7 @@ export type SettingsStackParamList = {
 export type RootTabParamList = {
   WatchlistTab: undefined;
   TrendingTab: undefined;
+  DailyPicksTab: undefined;
   PortfolioTab: undefined;
   SettingsTab: undefined;
 };

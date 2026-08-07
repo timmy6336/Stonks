@@ -28,6 +28,10 @@ No Play Store, no backend server to host — the app talks directly to market da
 - **Live trading** — optional, gated in Settings: add your own Alpaca API keys and flip a
   switch (with a confirmation prompt) to place real orders instead of simulated ones.
 - **Portfolio** — cash balance, positions, unrealized P&L, and trade history.
+- **Daily Picks** — two independent top-5 shortlists computed once a day: a transparent rule-based
+  math model (technical signal, trend projection, momentum, cross-list confirmation across several
+  free Yahoo screeners and curated categories) and, separately, an AI-generated top 5 from your
+  active AI provider given the same broad candidate data plus recent headlines.
 
 ## Development
 

@@ -12,6 +12,7 @@ import { AlertsScreen } from '../screens/AlertsScreen';
 import { PortfolioScreen } from '../screens/PortfolioScreen';
 import { ProfilesScreen } from '../screens/ProfilesScreen';
 import { AiDecisionDetailScreen } from '../screens/AiDecisionDetailScreen';
+import { DailyPicksScreen } from '../screens/DailyPicksScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { HowItWorksScreen } from '../screens/HowItWorksScreen';
 import { SignalTrackRecordScreen } from '../screens/SignalTrackRecordScreen';
@@ -21,6 +22,7 @@ import { maybeSendDailyDigest } from '../notifications/dailyDigest';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useTheme } from '../theme/ThemeContext';
 import type {
+  DailyPicksStackParamList,
   PortfolioStackParamList,
   RootTabParamList,
   SettingsStackParamList,
@@ -34,6 +36,7 @@ const Tab = createBottomTabNavigator<RootTabParamList>();
 const WatchlistStack = createNativeStackNavigator<WatchlistStackParamList>();
 const TrendingStack = createNativeStackNavigator<TrendingStackParamList>();
 const PortfolioStack = createNativeStackNavigator<PortfolioStackParamList>();
+const DailyPicksStack = createNativeStackNavigator<DailyPicksStackParamList>();
 const SettingsStack = createNativeStackNavigator<SettingsStackParamList>();
 
 function WatchlistStackScreen() {
@@ -102,6 +105,19 @@ function PortfolioStackScreen() {
   );
 }
 
+function DailyPicksStackScreen() {
+  return (
+    <DailyPicksStack.Navigator>
+      <DailyPicksStack.Screen name="DailyPicks" component={DailyPicksScreen} options={{ title: 'Daily Picks' }} />
+      <DailyPicksStack.Screen
+        name="StockDetail"
+        component={StockDetailScreen}
+        options={({ route }) => ({ title: route.params.symbol })}
+      />
+    </DailyPicksStack.Navigator>
+  );
+}
+
 function SettingsStackScreen() {
   return (
     <SettingsStack.Navigator>
@@ -119,6 +135,7 @@ function SettingsStackScreen() {
 const TAB_ICONS: Record<keyof RootTabParamList, keyof typeof Ionicons.glyphMap> = {
   WatchlistTab: 'eye',
   TrendingTab: 'trending-up',
+  DailyPicksTab: 'bulb',
   PortfolioTab: 'wallet',
   SettingsTab: 'settings',
 };
@@ -146,6 +163,13 @@ function MainTabs() {
         {() => (
           <ErrorBoundary>
             <TrendingStackScreen />
+          </ErrorBoundary>
+        )}
+      </Tab.Screen>
+      <Tab.Screen name="DailyPicksTab" options={{ title: 'Picks' }}>
+        {() => (
+          <ErrorBoundary>
+            <DailyPicksStackScreen />
           </ErrorBoundary>
         )}
       </Tab.Screen>

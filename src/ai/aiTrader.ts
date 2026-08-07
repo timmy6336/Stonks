@@ -4,6 +4,8 @@ import { computeTrendPrediction } from '../predictions/trendPrediction';
 import { generateInsight, getActiveProviderId } from '../llm/llmClient';
 import { getAiDecisionLog, getPositions, getProfileById, getWatchlist, logAiDecisionRound, recordPaperTrade } from '../db/database';
 import { STOCK_CATEGORIES } from '../data/categories';
+import { mapWithConcurrency } from '../utils/concurrency';
+import { parseJsonWithRecovery } from '../llm/jsonRecovery';
 import type { AiDecisionRound, AiRiskLevel, AiTradeAction, SignalScore, TradeSide } from '../types';
 
 // The local on-device model has a small context window, so it gets a much smaller candidate set
@@ -47,19 +49,6 @@ const RISK_CONFIG: Record<AiRiskLevel, RiskConfig> = {
       'HIGH risk: chase larger gains and accept larger swings. You may take concentrated, high-conviction positions, act on momentum or contrarian plays even against a weaker signal if the trend/history make a compelling case, and commit a larger share of cash to your best ideas.',
   },
 };
-
-async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let next = 0;
-  async function worker() {
-    while (next < items.length) {
-      const i = next++;
-      results[i] = await fn(items[i]);
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
-  return results;
-}
 
 /** Round-robins through every source list so the combined universe stays diverse instead of one source crowding out the rest. */
 function interleave(lists: string[][]): string[] {
@@ -471,55 +460,8 @@ function simulateFill(quotePrice: number, side: TradeSide): number {
   return Math.round(quotePrice * factor * 100) / 100;
 }
 
-/**
- * Salvages whatever it can from a response whose overall JSON structure doesn't parse — either
- * because it got cut off mid-object (the provider hit its output token limit, often mid-way
- * through an action's "reasoning" string) or because of a structural slip like wrapping each
- * action in its own stray array instead of one flat "actions" array. Either way, pull out the
- * summary text and every *complete* action object via regex; an action object is flat (no nested
- * braces), so a balanced `{...}` match reliably captures only whole ones regardless of whatever
- * invalid punctuation surrounds them, and naturally skips a trailing partial one.
- */
-function recoverMalformedResponse(text: string): { summary?: string; actions?: unknown[] } {
-  const summaryMatch = text.match(/"summary"\s*:\s*"((?:[^"\\]|\\.)*)"/);
-  const actionMatches = text.match(/\{[^{}]*\}/g) ?? [];
-  const actions: unknown[] = [];
-  for (const m of actionMatches) {
-    try {
-      const obj = JSON.parse(m);
-      if (obj && typeof obj === 'object' && 'action' in obj) actions.push(obj);
-    } catch {
-      // this object itself didn't parse either — skip it, not worth guessing at
-    }
-  }
-  if (!summaryMatch && actions.length === 0) {
-    throw new Error('Response did not contain a usable JSON object.');
-  }
-  const recoveryNote = ' [recovered from a malformed response — some actions may be missing]';
-  return {
-    summary: (summaryMatch ? summaryMatch[1] : 'No summary provided.') + recoveryNote,
-    actions,
-  };
-}
-
 function extractJson(raw: string): { summary?: string; actions?: unknown[] } {
-  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const text = fenced ? fenced[1] : raw;
-  const start = text.indexOf('{');
-  if (start === -1) {
-    throw new Error('Response did not contain a JSON object.');
-  }
-
-  const end = text.lastIndexOf('}');
-  if (end !== -1 && end > start) {
-    try {
-      return JSON.parse(text.slice(start, end + 1));
-    } catch {
-      // fall through — the slice from first '{' to last '}' wasn't valid JSON (truncated, or malformed)
-    }
-  }
-
-  return recoverMalformedResponse(text.slice(start));
+  return parseJsonWithRecovery(raw, 'actions', (obj) => 'action' in obj);
 }
 
 /**
