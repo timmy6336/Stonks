@@ -122,6 +122,23 @@ export function DailyPicksScreen({ navigation }: Props) {
         result?.ai?.map(renderPick)
       )}
 
+      {result?.aiRawResponse && (
+        <>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="document-text-outline" size={16} color={colors.accent} />
+            <Text style={styles.sectionTitle}>Raw AI response</Text>
+          </View>
+          <Text style={styles.sectionHint}>
+            Exactly what the AI provider returned — useful for seeing why a pick was made, or why parsing failed.
+          </Text>
+          <View style={styles.rawBox}>
+            <Text style={styles.rawText} selectable>
+              {result.aiRawResponse}
+            </Text>
+          </View>
+        </>
+      )}
+
       {result && (
         <Text style={styles.computedAtText}>
           Last computed {new Date(result.computedAt).toLocaleString()} for {result.date}.
@@ -150,6 +167,8 @@ function createStyles(colors: ThemeColors) {
       marginBottom: 10,
     },
     aiErrorText: { color: colors.textMuted, fontSize: 12, flex: 1, lineHeight: 17 },
+    rawBox: { backgroundColor: colors.card, borderRadius: 12, padding: 12, marginBottom: 12 },
+    rawText: { color: colors.textSecondary, fontFamily: 'monospace', fontSize: 12, lineHeight: 17 },
     pickCard: {
       flexDirection: 'row',
       alignItems: 'center',

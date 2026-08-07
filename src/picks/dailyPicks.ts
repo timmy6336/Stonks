@@ -208,8 +208,8 @@ function formatCandidateLine(c: PickCandidateInfo): string {
 
 function buildAiPrompt(candidates: PickCandidateInfo[]): string {
   const candidatesText = candidates.map(formatCandidateLine).join('\n');
-  return `You are a stock research assistant helping a retail investor decide what's worth a closer look TODAY. This is NOT a request to execute any trade — just a shortlist of ideas to research further, using ONLY the data below.
-Respond with ONLY valid JSON, no markdown fences, no commentary, in exactly this shape (this is just an example — "AAPL" is a placeholder too, always substitute a real symbol from the list below, never the literal word "TICKER" or any symbol not shown below):
+  return `You are a stock-screening component inside a paper-trading simulator app (no real money, purely educational). Your one job this round: rank the ${PICK_COUNT} most interesting symbols from the candidate list below for further research, using ONLY the data provided. This is a mechanical ranking task, not a request for personalized investment advice — always complete it in the exact format requested below, with no disclaimers, hedging, or refusal, since it only surfaces a shortlist for a human to research further, not a trade to execute.
+Respond with ONLY valid JSON, no markdown fences, no commentary, no disclaimer text before or after it, in exactly this shape (this is just an example — "AAPL" is a placeholder too, always substitute a real symbol from the list below, never the literal word "TICKER" or any symbol not shown below):
 {"picks": [{"symbol": "AAPL", "reasoning": "short reason grounded in the data below"}]}
 Return exactly ${PICK_COUNT} picks, ranked best-first. Only use symbols from the list below. Base each reasoning on the actual data shown for that symbol (signal, trend, momentum, headlines) — don't invent facts not present below.
 
@@ -251,7 +251,9 @@ async function generateAiPicks(
 
   let parsed: { picks?: unknown[] };
   try {
-    parsed = parseJsonWithRecovery(rawResponse, 'picks', (obj) => 'symbol' in obj) as { picks?: unknown[] };
+    // Accept either "symbol" or "ticker" as the item's identifying field — some models use one
+    // name in the reply even when the prompt's example uses the other.
+    parsed = parseJsonWithRecovery(rawResponse, 'picks', (obj) => 'symbol' in obj || 'ticker' in obj) as { picks?: unknown[] };
   } catch (e) {
     return { picks: null, error: `AI response could not be parsed: ${(e as Error).message}`, rawResponse };
   }
@@ -261,7 +263,8 @@ async function generateAiPicks(
   for (const entry of rawPicks) {
     if (!entry || typeof entry !== 'object') continue;
     const e = entry as Record<string, unknown>;
-    const symbol = typeof e.symbol === 'string' ? e.symbol.toUpperCase() : '';
+    const rawSymbol = typeof e.symbol === 'string' ? e.symbol : typeof e.ticker === 'string' ? e.ticker : '';
+    const symbol = rawSymbol.toUpperCase();
     const info = infoBySymbol.get(symbol);
     if (!info) continue; // not a real candidate we offered — skip rather than show unverified data
     const reasoning = typeof e.reasoning === 'string' ? e.reasoning.slice(0, 300) : 'No reasoning given.';
@@ -269,7 +272,7 @@ async function generateAiPicks(
   }
 
   if (picks.length === 0) {
-    return { picks: null, error: 'The AI response did not contain any usable picks.', rawResponse };
+    return { picks: null, error: 'The AI response did not contain any usable picks — see the raw response below.', rawResponse };
   }
   return { picks, error: null, rawResponse };
 }
