@@ -1,14 +1,22 @@
 import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { DailyPicksStackParamList } from '../navigation/types';
 import { computeDailyPicks, getCachedDailyPicks, type DailyPick, type DailyPicksResult } from '../picks/dailyPicks';
+import { getAppStateValue, setAppStateValue } from '../db/database';
 import { useTheme } from '../theme/ThemeContext';
 import type { ThemeColors } from '../theme/theme';
 
 type Props = NativeStackScreenProps<DailyPicksStackParamList, 'DailyPicks'>;
+
+const MAX_PRICE_KEY = 'daily_picks_max_price';
+
+function parsePrice(input: string): number | null {
+  const n = Number(input.trim());
+  return input.trim() && Number.isFinite(n) && n > 0 ? n : null;
+}
 
 export function DailyPicksScreen({ navigation }: Props) {
   const { colors } = useTheme();
@@ -16,16 +24,33 @@ export function DailyPicksScreen({ navigation }: Props) {
   const [result, setResult] = useState<DailyPicksResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [computing, setComputing] = useState(false);
+  const [maxPriceInput, setMaxPriceInput] = useState('');
+
+  const handleCompute = useCallback(async (maxPriceOverride?: number | null) => {
+    setComputing(true);
+    try {
+      const effectiveMaxPrice = maxPriceOverride === undefined ? parsePrice(maxPriceInput) : maxPriceOverride;
+      const fresh = await computeDailyPicks(effectiveMaxPrice);
+      setResult(fresh);
+    } finally {
+      setComputing(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [maxPriceInput]);
 
   const load = useCallback(async () => {
     setLoading(true);
+    const savedMaxPrice = await getAppStateValue(MAX_PRICE_KEY);
+    if (savedMaxPrice) setMaxPriceInput(savedMaxPrice);
+    const parsedMaxPrice = savedMaxPrice ? parsePrice(savedMaxPrice) : null;
+
     const cached = await getCachedDailyPicks();
-    if (cached) {
+    if (cached && cached.maxPriceFilter === parsedMaxPrice) {
       setResult(cached);
       setLoading(false);
     } else {
       setLoading(false);
-      await handleCompute();
+      await handleCompute(parsedMaxPrice);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -36,14 +61,9 @@ export function DailyPicksScreen({ navigation }: Props) {
     }, [load])
   );
 
-  const handleCompute = async () => {
-    setComputing(true);
-    try {
-      const fresh = await computeDailyPicks();
-      setResult(fresh);
-    } finally {
-      setComputing(false);
-    }
+  const handleRecalculate = async () => {
+    await setAppStateValue(MAX_PRICE_KEY, maxPriceInput.trim());
+    await handleCompute();
   };
 
   const goToDetail = (symbol: string) => navigation.navigate('StockDetail', { symbol });
@@ -79,13 +99,43 @@ export function DailyPicksScreen({ navigation }: Props) {
     <ScrollView
       style={styles.container}
       contentContainerStyle={{ padding: 16 }}
-      refreshControl={<RefreshControl refreshing={computing} onRefresh={handleCompute} />}
+      refreshControl={<RefreshControl refreshing={computing} onRefresh={() => handleCompute()} />}
     >
       <Text style={styles.introHint}>
         Two independent takes on what's worth a closer look today — a transparent rule-based score, and a separate
         AI-generated shortlist. Neither is a recommendation to buy; both are starting points for your own research.
-        Recomputed once per day (pull to refresh for an update).
+        Recomputed once per day, or whenever you recalculate below.
       </Text>
+
+      <View style={styles.filterRow}>
+        <View style={styles.filterInputWrap}>
+          <Text style={styles.filterLabel}>Max price ($)</Text>
+          <TextInput
+            style={styles.filterInput}
+            placeholder="No limit"
+            placeholderTextColor={colors.textMuted}
+            keyboardType="numeric"
+            value={maxPriceInput}
+            onChangeText={setMaxPriceInput}
+          />
+        </View>
+        <Pressable style={styles.recalculateButton} onPress={handleRecalculate} disabled={computing}>
+          {computing ? (
+            <ActivityIndicator color="#fff" size="small" />
+          ) : (
+            <>
+              <Ionicons name="refresh" size={16} color="#fff" />
+              <Text style={styles.recalculateButtonText}>Recalculate</Text>
+            </>
+          )}
+        </Pressable>
+      </View>
+      {result?.maxPriceFilter != null && (
+        <Text style={styles.filterAppliedHint}>
+          Both lists below are limited to symbols trading at ${result.maxPriceFilter.toFixed(2)} or less — fewer than
+          5 may show if not enough candidates qualify.
+        </Text>
+      )}
 
       <View style={styles.sectionHeader}>
         <Ionicons name="calculator" size={18} color={colors.accent} />
@@ -152,7 +202,31 @@ function createStyles(colors: ThemeColors) {
   return StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
     centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
-    introHint: { color: colors.textMuted, fontSize: 12, lineHeight: 17, marginBottom: 16 },
+    introHint: { color: colors.textMuted, fontSize: 12, lineHeight: 17, marginBottom: 14 },
+    filterRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 10, marginBottom: 6 },
+    filterInputWrap: { flex: 1 },
+    filterLabel: { color: colors.textMuted, fontSize: 11, marginBottom: 4 },
+    filterInput: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 8,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      backgroundColor: colors.inputBackground,
+      color: colors.text,
+    },
+    recalculateButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      backgroundColor: colors.accent,
+      borderRadius: 8,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+    },
+    recalculateButtonText: { color: '#fff', fontWeight: '700', fontSize: 13, includeFontPadding: false },
+    filterAppliedHint: { color: colors.textMuted, fontSize: 11, lineHeight: 15, marginBottom: 14 },
     sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12, marginBottom: 4 },
     sectionTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
     sectionHint: { color: colors.textMuted, fontSize: 12, lineHeight: 16, marginBottom: 10 },

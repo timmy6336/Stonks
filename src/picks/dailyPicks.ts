@@ -27,6 +27,7 @@ export type DailyPick = {
 export type DailyPicksResult = {
   date: string; // YYYY-MM-DD, local calendar day this was computed for
   computedAt: number;
+  maxPriceFilter: number | null; // the price cap this result was computed with, if any
   math: DailyPick[];
   mathError: string | null;
   ai: DailyPick[] | null;
@@ -277,10 +278,15 @@ async function generateAiPicks(
   return { picks, error: null, rawResponse };
 }
 
-/** Computes (and caches) today's picks: a rule-based top 5 and, if an AI provider is configured, an AI-generated top 5. */
-export async function computeDailyPicks(): Promise<DailyPicksResult> {
+/**
+ * Computes (and caches) today's picks: a rule-based top 5 and, if an AI provider is configured,
+ * an AI-generated top 5. `maxPrice`, if given, restricts both lists to candidates trading at or
+ * below that price — the AI never even sees a symbol above the cap, so it can't pick one.
+ */
+export async function computeDailyPicks(maxPrice?: number | null): Promise<DailyPicksResult> {
   const date = todayKey();
   const maxCandidates = MAX_CANDIDATES_CLOUD; // gather broadly once; the AI step sub-samples if a smaller model is active
+  const priceCap = maxPrice != null && maxPrice > 0 ? maxPrice : null;
   let math: DailyPick[] = [];
   let mathError: string | null = null;
   let ai: DailyPick[] | null = null;
@@ -289,22 +295,29 @@ export async function computeDailyPicks(): Promise<DailyPicksResult> {
 
   try {
     const symbolLists = await gatherCandidateUniverse(maxCandidates);
-    const infoBySymbol = await gatherCandidateInfo(symbolLists);
+    let infoBySymbol = await gatherCandidateInfo(symbolLists);
     if (infoBySymbol.size === 0) {
       mathError = 'No market data available right now.';
     } else {
-      math = computeMathematicalPicks(infoBySymbol);
-      const mathRanked = [...infoBySymbol.values()].sort((a, b) => computeMathScore(b) - computeMathScore(a));
-      const aiResult = await generateAiPicks(infoBySymbol, mathRanked);
-      ai = aiResult.picks;
-      aiError = aiResult.error;
-      aiRawResponse = aiResult.rawResponse;
+      if (priceCap != null) {
+        infoBySymbol = new Map([...infoBySymbol].filter(([, c]) => c.price <= priceCap));
+      }
+      if (infoBySymbol.size === 0) {
+        mathError = `No candidates found at or below $${priceCap!.toFixed(2)}.`;
+      } else {
+        math = computeMathematicalPicks(infoBySymbol);
+        const mathRanked = [...infoBySymbol.values()].sort((a, b) => computeMathScore(b) - computeMathScore(a));
+        const aiResult = await generateAiPicks(infoBySymbol, mathRanked);
+        ai = aiResult.picks;
+        aiError = aiResult.error;
+        aiRawResponse = aiResult.rawResponse;
+      }
     }
   } catch (e) {
     mathError = (e as Error).message;
   }
 
-  const result: DailyPicksResult = { date, computedAt: Date.now(), math, mathError, ai, aiError, aiRawResponse };
+  const result: DailyPicksResult = { date, computedAt: Date.now(), maxPriceFilter: priceCap, math, mathError, ai, aiError, aiRawResponse };
   await setAppStateValue(DAILY_PICKS_KEY_PREFIX + date, JSON.stringify(result));
   return result;
 }
